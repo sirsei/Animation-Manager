@@ -1,0 +1,350 @@
+-- ANIMATION UI --
+
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+local Players = game:GetService("Players")
+local plr = Players.LocalPlayer
+
+--========================================================--
+-- UI WINDOW
+--========================================================--
+
+local Window = Rayfield:CreateWindow({
+    Name = "Animation Manager",
+    LoadingTitle = "Wait Ya!",
+    LoadingSubtitle = "Sei Animation UI"
+})
+--========================================================--
+-- STOP ALL ANIMATIONS
+--========================================================--
+
+local function StopAnim()
+    if not plr.Character then return end
+
+    local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
+        pcall(function() track:Stop() end)
+    end
+end
+
+--========================================================--
+-- NORMALIZE ANIMATION ID
+--========================================================--
+
+local function norm(id)
+    if not id then return "" end
+    id = tostring(id):gsub("%s+", "")
+    if id == "" then return "" end
+    if id:match("rbxassetid://") then return id end
+    local num = id:match("(%d+)")
+    if num then return "rbxassetid://" .. num end
+    return id
+end
+
+--========================================================--
+-- APPLY ANIMATION
+--========================================================--
+
+local function ApplySingle(category, animID)
+    if not plr.Character then return end
+
+    local Animate = plr.Character:FindFirstChild("Animate")
+    if not Animate then return end
+
+    Animate.Disabled = true
+    StopAnim()
+
+    if category == "idle" then
+        Animate.idle.Animation1.AnimationId = norm(animID.idle1)
+        Animate.idle.Animation2.AnimationId = norm(animID.idle2)
+
+    elseif category == "walk" then
+        Animate.walk.WalkAnim.AnimationId = norm(animID)
+
+    elseif category == "run" then
+        Animate.run.RunAnim.AnimationId = norm(animID)
+
+    elseif category == "jump" then
+        Animate.jump.JumpAnim.AnimationId = norm(animID)
+
+    elseif category == "climb" then
+        Animate.climb.ClimbAnim.AnimationId = norm(animID)
+
+    elseif category == "fall" then
+        Animate.fall.FallAnim.AnimationId = norm(animID)
+    end
+
+    task.wait(0.05)
+    Animate.Disabled = false
+end
+
+--========================================================--
+-- MASTER ANIMATION LIST
+--========================================================--
+
+local ANIMS = {
+    Zombie = {idle1=3489171152,idle2=3489171152,walk=3489174223,run=3489173414,jump=616161997,climb=616156119,fall=616157476},
+    Hero = {idle1=616111295,idle2=616113536,walk=616122287,run=616117076,jump=616113998,climb=616107820,fall=616108936},
+    Ninja = {idle1=656117400,idle2=656118341,walk=656121766,run=656118852,jump=656117878,climb=656114359,fall=656115606},
+    Cartoon = {idle1=742637544,idle2=742638445,walk=742640026,run=742638842,jump=742637942,climb=742636889,fall=742637151},
+    Elder = {idle1=845397899,idle2=845400520,walk=845403044,run=845386501,jump=845398858,climb=845392038,fall=845388394},
+    Vampire = {idle1=1083445855,idle2=1083450166,walk=1083473930,run=1083462077,jump=1083455352,climb=1083439238,fall=1083443587},
+    Werewolf = {idle1=1083195517,idle2=1083214717,walk=1083216690,run=10921336997,jump=1083218792,climb=1083182000,fall=10921337907},
+    Ghost = {idle1=616006778,idle2=616008087,walk=616013216,run=616010382,jump=616008936,climb=616003713,fall=616004713},
+    ZombieClassic = {idle1=616158929,idle2=616160636,walk=616168032,run=616163682,jump=616161997,climb=616156119,fall=616157476},
+    Adidas2 = {idle1=18537376492,idle2=18537371272,walk=18537392113,run=18537384940,jump=18537380791,climb=18537363391,fall=18537367238},
+
+    -- WICKED (NEW)
+    Wicked = {
+        idle1 = "rbxassetid://92849173543269",
+        idle2 = "rbxassetid://132238900951109",
+        walk  = "rbxassetid://73718308412641",
+        run   = "rbxassetid://135515454877967",
+        jump  = "rbxassetid://78508480717326",
+        climb = "rbxassetid://129447497744818",
+        fall  = "rbxassetid://78147885297412",
+        pose  = "rbxassetid://87867222929430"
+    },
+}
+
+--========================================================--
+-- PRESET TAB
+--========================================================--
+
+local PresetTab = Window:CreateTab("Full Presets")
+PresetTab:CreateSection("Full Animation Sets")
+
+for name, data in pairs(ANIMS) do
+    PresetTab:CreateButton({
+        Name = name,
+        Callback = function()
+            ApplySingle("idle",{idle1=data.idle1,idle2=data.idle2})
+            ApplySingle("walk",data.walk)
+            ApplySingle("run",data.run)
+            ApplySingle("jump",data.jump)
+            ApplySingle("climb",data.climb)
+            ApplySingle("fall",data.fall)
+        end
+    })
+end
+
+--========================================================--
+-- CATEGORY TABS
+--========================================================--
+
+local function CreateSingleTab(tabName, category)
+    local tab = Window:CreateTab(tabName)
+    tab:CreateSection(tabName)
+
+    for name, data in pairs(ANIMS) do
+        tab:CreateButton({
+            Name = name,
+            Callback = function()
+                if category == "idle" then
+                    ApplySingle("idle",{idle1=data.idle1,idle2=data.idle2})
+                else
+                    ApplySingle(category, data[category])
+                end
+            end
+        })
+    end
+end
+
+CreateSingleTab("IDLE Only","idle")
+CreateSingleTab("WALK Only","walk")
+CreateSingleTab("RUN Only","run")
+CreateSingleTab("JUMP Only","jump")
+CreateSingleTab("CLIMB Only","climb")
+CreateSingleTab("FALL Only","fall")
+
+--========================================================--
+-- LOCAL PLAYER TAB
+--========================================================--
+
+local LocalTab = Window:CreateTab(plr.Name)
+LocalTab:CreateSection("Movement")
+
+LocalTab:CreateSlider({
+    Name = "WalkSpeed",
+    Range = {1,200},
+    Increment = 1,
+    CurrentValue = 16,
+    Callback = function(v)
+        if plr.Character then
+            local h = plr.Character:FindFirstChildOfClass("Humanoid")
+            if h then h.WalkSpeed = v end
+        end
+    end,
+})
+
+--========================================================--
+-- INFINITE JUMP
+--========================================================--
+
+local infJump
+local infJumpDebounce = false
+
+LocalTab:CreateToggle({
+    Name = "Infinite Jump",
+    CurrentValue = false,
+    Callback = function(v)
+        if v then
+            if infJump then infJump:Disconnect() end
+            infJumpDebounce = false
+
+            infJump = game:GetService("UserInputService").JumpRequest:Connect(function()
+                if not infJumpDebounce then
+                    infJumpDebounce = true
+                    local hum = plr.Character and plr.Character:FindFirstChildWhichIsA("Humanoid")
+                    if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+                    task.wait()
+                    infJumpDebounce = false
+                end
+            end)
+        else
+            if infJump then infJump:Disconnect() end
+            infJumpDebounce = false
+        end
+    end,
+})
+
+--========================================================--
+-- EMOTE TAB
+--========================================================--
+
+local EmotTab = Window:CreateTab("Emot")
+EmotTab:CreateSection("Play Emotes")
+
+local currentEmote
+
+local function PlayEmote(animId)
+    StopAnim()
+
+    if currentEmote then
+        pcall(function() currentEmote:Stop() end)
+    end
+
+    local char = plr.Character
+    if not char then return end
+
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    local anim = Instance.new("Animation")
+    anim.AnimationId = animId
+
+    currentEmote = hum:LoadAnimation(anim)
+    currentEmote:Play()
+end
+
+local function AddEmoteButton(name, id)
+    EmotTab:CreateButton({
+        Name = name,
+        Callback = function()
+            PlayEmote(id)
+        end
+    })
+end
+
+-- Emot
+AddEmoteButton("Rakai", "rbxassetid://71494363833326")
+AddEmoteButton("Michael", "rbxassetid://88285541926517")
+AddEmoteButton("Hip Sway", "rbxassetid://138316142522795")
+AddEmoteButton("Skibidi Shake", "rbxassetid://129069398913210")
+AddEmoteButton("Jason Vorhees Meme Dance", "rbxassetid://82633819892658")
+AddEmoteButton("Kid tantrum", "rbxassetid://86339673982616")
+AddEmoteButton("Spin Around", "rbxassetid://80407560356039")
+AddEmoteButton("Shuffling", "rbxassetid://118468821959324")
+AddEmoteButton("Jumpstyle Dance", "rbxassetid://112773902133223")
+AddEmoteButton("Speed Mirage", "rbxassetid://96731289267640")
+AddEmoteButton("Sturdy NYC Dance", "rbxassetid://140333103929828")
+
+-- STOP EMOTE BUTTON
+EmotTab:CreateButton({
+    Name = "STOP EMOTE",
+    Callback = function()
+        if currentEmote then
+            pcall(function() currentEmote:Stop() end)
+        end
+    end
+})
+
+--========================================================--
+-- SIMPLE FLY + UI STATUS
+--========================================================--
+
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local flying = false
+local flySpeed = 50
+local bv
+local gy
+local flyLoop
+
+local flyStatusLabel = LocalTab:CreateLabel("Fly Status: OFF")
+
+LocalTab:CreateSlider({
+    Name = "Fly Speed",
+    Range = {10,200},
+    Increment = 5,
+    CurrentValue = flySpeed,
+    Callback = function(v)
+        flySpeed = v
+    end
+})
+
+local function StartFly()
+    if flying then return end
+    flying = true
+    flyStatusLabel:Set("Fly Status: ON")
+
+    local char = plr.Character
+    local hrp = char:WaitForChild("HumanoidRootPart")
+
+    bv = Instance.new("BodyVelocity")
+    bv.Velocity = Vector3.new(0,0,0)
+    bv.MaxForce = Vector3.new(1e5,1e5,1e5)
+    bv.Parent = hrp
+
+    gy = Instance.new("BodyGyro")
+    gy.D = 0
+    gy.P = 9e4
+    gy.MaxTorque = Vector3.new(1e5,1e5,1e5)
+    gy.CFrame = hrp.CFrame
+    gy.Parent = hrp
+
+    flyLoop = RunService.RenderStepped:Connect(function()
+        local cam = workspace.CurrentCamera
+        local direction = Vector3.new(0,0,0)
+
+        if UIS:IsKeyDown(Enum.KeyCode.W) then direction += cam.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.S) then direction -= cam.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.A) then direction -= cam.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.D) then direction += cam.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.Space) then direction += Vector3.new(0,1,0) end
+        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then direction -= Vector3.new(0,1,0) end
+
+        if direction.Magnitude > 0 then direction = direction.Unit end
+        bv.Velocity = direction * flySpeed
+        gy.CFrame = cam.CFrame
+    end)
+end
+
+local function StopFly()
+    flying = false
+    flyStatusLabel:Set("Fly Status: OFF")
+
+    if flyLoop then flyLoop:Disconnect() end
+    if bv then bv:Destroy() end
+    if gy then gy:Destroy() end
+end
+
+UIS.InputBegan:Connect(function(input,gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        if flying then StopFly() else StartFly() end
+    end
+end)
