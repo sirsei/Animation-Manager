@@ -14,6 +14,136 @@ local Window = Rayfield:CreateWindow({
     LoadingTitle = "Wait Ya!",
     LoadingSubtitle = "Sei Animation UI"
 })
+
+--========================================================--
+-- POSE TAB
+--========================================================--
+
+local PoseTab = Window:CreateTab("Pose")
+PoseTab:CreateSection("All Poses")
+
+local currentPose
+
+local function PlayPose(id)
+    -- stop anim lain (kalau kamu punya StopAnim(), pakai itu)
+    if currentPose then
+        pcall(function() currentPose:Stop() end)
+    end
+
+    local char = plr.Character
+    if not char then return end
+
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    if not hum then return end
+
+    local anim = Instance.new("Animation")
+    anim.AnimationId = id
+
+    currentPose = hum:LoadAnimation(anim)
+    currentPose:Play()
+end
+
+local function AddPose(name, id)
+    PoseTab:CreateButton({
+        Name = name,
+        Callback = function()
+            PlayPose(id)
+        end
+    })
+end
+
+--========================================================--
+-- POSE LIST
+--========================================================--
+PoseTab:CreateButton({
+    Name = "⛔ STOP ANIMATION",
+    Callback = function()
+        if currentPose then
+            pcall(function() currentPose:Stop() end)
+        end
+        StopAnim()
+    end
+})
+
+AddPose("ACELERADA", "rbxassetid://103360497719320")
+AddPose("ANIM1", "rbxassetid://73980801925168")
+AddPose("ANIM2", "rbxassetid://10713992055")
+AddPose("Bagoyang", "rbxassetid://96100759913198")
+AddPose("Bagoyang2", "rbxassetid://83650099589962")
+AddPose("Berlutut", "rbxassetid://107990372400562")
+AddPose("Coolsit", "rbxassetid://126899447275562")
+AddPose("Coupleberlutut", "rbxassetid://94211368534890")
+AddPose("MOSH", "rbxassetid://96147994216119")
+AddPose("Make You Mine", "rbxassetid://98951659625746")
+AddPose("POSE1", "rbxassetid://99499783161907")
+AddPose("POSE10", "rbxassetid://108222576174226")
+AddPose("POSE11", "rbxassetid://137036559253683")
+AddPose("POSE12", "rbxassetid://108078321099716")
+AddPose("POSE13", "rbxassetid://110273858656000")
+AddPose("POSE14", "rbxassetid://97185364700038")
+AddPose("POSE15", "rbxassetid://136687532783709")
+AddPose("POSE16", "rbxassetid://70472458721219")
+AddPose("POSE17", "rbxassetid://83984152269870")
+AddPose("POSE18", "rbxassetid://10714377090")
+AddPose("POSE19", "rbxassetid://15392759696")
+AddPose("POSE2", "rbxassetid://130198479813020")
+AddPose("POSE20", "rbxassetid://118485763841250")
+AddPose("POSE3", "rbxassetid://128398454311626")
+AddPose("POSE4", "rbxassetid://117181705578424")
+AddPose("POSE5", "rbxassetid://93731275877969")
+AddPose("POSE6", "rbxassetid://129100070542534")
+AddPose("POSE7", "rbxassetid://92484091561265")
+AddPose("POSE8", "rbxassetid://123742750287999")
+AddPose("POSE9", "rbxassetid://77038516022976")
+AddPose("Rebahan1", "rbxassetid://89288588607946")
+AddPose("Sendertembok", "rbxassetid://112018126760165")
+AddPose("Side Hug 1", "rbxassetid://89930880557935")
+AddPose("megangmic", "rbxassetid://112495126839532")
+AddPose("POSE21", "rbxassetid://138616803184969")
+AddPose("POSE22", "rbxassetid://95128526244610")
+AddPose("POSE23", "rbxassetid://72526127498800")
+AddPose("ANIM3", "rbxassetid://10714061912")
+AddPose("POSE24", "rbxassetid://10714349037")
+AddPose("SIGN SUFFLE", "rbxassetid://112931882473990")
+AddPose("POSE25", "rbxassetid://10714349037")
+AddPose("POSE26", "rbxassetid://89973831894197")
+AddPose("SHAKE IT", "rbxassetid://115318724645140")
+AddPose("POSE27", "rbxassetid://114388371896974")
+AddPose("POSE28", "rbxassetid://122746752555782")
+AddPose("SAD SIT", "rbxassetid://95187207564838")
+AddPose("POSE29", "rbxassetid://115044428254622")
+AddPose("POSE30", "rbxassetid://104714163485875")
+AddPose("POSE31", "rbxassetid://78737936680054")
+AddPose("POSE32", "rbxassetid://121760229357537")
+AddPose("DUDUK", "rbxassetid://112779764845963")
+AddPose("POSE33", "rbxassetid://93810591156861")
+AddPose("SIDE HUG 2", "rbxassetid://74176972084963")
+AddPose("POSE34", "rbxassetid://98352002677627")
+AddPose("DUNK 1", "rbxassetid://107337950964411")
+AddPose("DUNK 2", "rbxassetid://110624953380390")
+AddPose("POSE35", "rbxassetid://84512654543692")
+AddPose("POSE36", "rbxassetid://92426508778045")
+AddPose("Kawaii Pose 1", "rbxassetid://96376821038955")
+AddPose("Kawaii Pose 2", "rbxassetid://139190721467230")
+AddPose("Kawaii Pose 3", "rbxassetid://135842862213366")
+AddPose("Kawaii Pose 4", "rbxassetid://109101975595639")
+AddPose("Kawaii Pose 5", "rbxassetid://88408967178570")
+AddPose("Kawaii Pose 6", "rbxassetid://134367697023729")
+AddPose("Kawaii Pose 7", "rbxassetid://106567587812858")
+AddPose("Kawaii Pose 8", "rbxassetid://109625571708575")
+AddPose("POSE37", "rbxassetid://75882131460757")
+AddPose("POSE38", "rbxassetid://113694692828125")
+AddPose("POSE39", "rbxassetid://79137761903782")
+AddPose("Kawaii Pose 9", "rbxassetid://93252808310422")
+AddPose("POSE40", "rbxassetid://139853858727379")
+AddPose("POSE41", "rbxassetid://138429027900975")
+AddPose("POSE42", "rbxassetid://103367332698944")
+AddPose("POSE43", "rbxassetid://117364803222287")
+AddPose("POSE44", "rbxassetid://92851417275538")
+AddPose("POSE45", "rbxassetid://95322520651018")
+AddPose("POSE46", "rbxassetid://129877311087446")
+AddPose("POSE47", "rbxassetid://138100149715377")
+
 --========================================================--
 -- STOP ALL ANIMATIONS
 --========================================================--
@@ -183,32 +313,46 @@ LocalTab:CreateSlider({
 -- INFINITE JUMP
 --========================================================--
 
+local UIS = game:GetService("UserInputService")
 local infJump
 local infJumpDebounce = false
 
 LocalTab:CreateToggle({
     Name = "Infinite Jump",
     CurrentValue = false,
-    Callback = function(v)
-        if v then
-            if infJump then infJump:Disconnect() end
-            infJumpDebounce = false
+    Callback = function(state)
 
-            infJump = game:GetService("UserInputService").JumpRequest:Connect(function()
-                if not infJumpDebounce then
-                    infJumpDebounce = true
-                    local hum = plr.Character and plr.Character:FindFirstChildWhichIsA("Humanoid")
-                    if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-                    task.wait()
-                    infJumpDebounce = false
-                end
-            end)
-        else
+        -- jika toggle dimatikan
+        if not state then
             if infJump then infJump:Disconnect() end
             infJumpDebounce = false
+            return
         end
-    end,
+
+        -- jika toggle dihidupkan
+        if infJump then infJump:Disconnect() end
+        infJumpDebounce = false
+
+        infJump = UIS.JumpRequest:Connect(function()
+            if not infJumpDebounce then
+                infJumpDebounce = true
+
+                local char = plr.Character
+                if not char then return end
+
+                local hum = char:FindFirstChildWhichIsA("Humanoid")
+                if hum then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+
+                task.wait(0.2) 
+                infJumpDebounce = false
+            end
+        end)
+
+    end
 })
+
 
 --========================================================--
 -- EMOTE TAB
@@ -348,3 +492,4 @@ UIS.InputBegan:Connect(function(input,gpe)
         if flying then StopFly() else StartFly() end
     end
 end)
+
