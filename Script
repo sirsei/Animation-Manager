@@ -1,69 +1,182 @@
--- ANIMATION UI --
 
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
+--========================================================--
+-- SERVICES
+--========================================================--
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 --========================================================--
--- UI WINDOW
+-- MERCURY UI
 --========================================================--
+local Library = loadstring(game:HttpGet(
+    "https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"
+))()
 
-local Window = Rayfield:CreateWindow({
-    Name = "Animation Manager",
-    LoadingTitle = "Wait Ya!",
-    LoadingSubtitle = "Sei Animation UI"
-})
+local gui = Library:create{
+    Theme = Library.Themes.Serika
+}
 
 --========================================================--
--- POSE TAB
+-- CORE ANIMATION FUNCTIONS
 --========================================================--
-
-local PoseTab = Window:CreateTab("Pose")
-PoseTab:CreateSection("All Poses")
-
 local currentPose
+local currentEmote
 
-local function PlayPose(id)
-    -- stop anim lain (kalau kamu punya StopAnim(), pakai itu)
-    if currentPose then
-        pcall(function() currentPose:Stop() end)
-    end
-
+local function StopAnim()
     local char = plr.Character
     if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
 
-    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    for _,track in ipairs(hum:GetPlayingAnimationTracks()) do
+        pcall(function() track:Stop() end)
+    end
+end
+
+local function PlayAnim(id, store)
+    StopAnim()
+    if store and store.value then
+        pcall(function() store.value:Stop() end)
+    end
+
+    local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
     if not hum then return end
 
     local anim = Instance.new("Animation")
     anim.AnimationId = id
+    local track = hum:LoadAnimation(anim)
+    track:Play()
 
-    currentPose = hum:LoadAnimation(anim)
-    currentPose:Play()
+    if store then
+        store.value = track
+    end
 end
 
-local function AddPose(name, id)
-    PoseTab:CreateButton({
+--========================================================--
+-- PRESET SYSTEM (RAYFIELD PORT)
+--========================================================--
+local function norm(id)
+    if not id then return "" end
+    id = tostring(id)
+    if id:match("rbxassetid://") then return id end
+    local n = id:match("%d+")
+    return n and ("rbxassetid://"..n) or id
+end
+
+local function ApplySingle(category, animID)
+    local char = plr.Character
+    if not char then return end
+
+    local Animate = char:FindFirstChild("Animate")
+    if not Animate then return end
+
+    Animate.Disabled = true
+    StopAnim()
+
+    if category == "idle" then
+        Animate.idle.Animation1.AnimationId = norm(animID.idle1)
+        Animate.idle.Animation2.AnimationId = norm(animID.idle2)
+    else
+        Animate[category][category:gsub("^%l", string.upper).."Anim"].AnimationId =
+            norm(animID)
+    end
+
+    task.wait(0.05)
+    Animate.Disabled = false
+end
+
+--========================================================--
+-- PRESET DATA (EXACT RAYFIELD)
+--========================================================--
+local ANIMS = {
+    Zombie = {idle1=3489171152,idle2=3489171152,walk=3489174223,run=3489173414,jump=616161997,climb=616156119,fall=616157476},
+    Hero = {idle1=616111295,idle2=616113536,walk=616122287,run=616117076,jump=616113998,climb=616107820,fall=616108936},
+    Ninja = {idle1=656117400,idle2=656118341,walk=656121766,run=656118852,jump=656117878,climb=656114359,fall=656115606},
+    Cartoon = {idle1=742637544,idle2=742638445,walk=742640026,run=742638842,jump=742637942,climb=742636889,fall=742637151},
+    Elder = {idle1=845397899,idle2=845400520,walk=845403044,run=845386501,jump=845398858,climb=845392038,fall=845388394},
+    Vampire = {idle1=1083445855,idle2=1083450166,walk=1083473930,run=1083462077,jump=1083455352,climb=1083439238,fall=1083443587},
+    Werewolf = {idle1=1083195517,idle2=1083214717,walk=1083216690,run=10921336997,jump=1083218792,climb=1083182000,fall=10921337907},
+    Ghost = {idle1=616006778,idle2=616008087,walk=616013216,run=616010382,jump=616008936,climb=616003713,fall=616004713},
+    ZombieClassic = {idle1=616158929,idle2=616160636,walk=616168032,run=616163682,jump=616161997,climb=616156119,fall=616157476},
+    Adidas2 = {idle1=18537376492,idle2=18537371272,walk=18537392113,run=18537384940,jump=18537380791,climb=18537363391,fall=18537367238},
+    Wicked = {idle1 =92849173543269,idle2=132238900951109,walk =73718308412641,run=135515454877967,jump=78508480717326,climb=129447497744818,fall=78147885297412,pose=87867222929430},      
+}
+
+--========================================================--
+-- PRESET TAB (FULL)
+--========================================================--
+local PresetTab = gui:tab{
+    Name = "Full Presets",
+    Icon = "rbxassetid://6034996695"
+}
+
+for name,data in pairs(ANIMS) do
+    PresetTab:button({
         Name = name,
         Callback = function()
-            PlayPose(id)
+            ApplySingle("idle",{idle1=data.idle1,idle2=data.idle2})
+            ApplySingle("walk",data.walk)
+            ApplySingle("run",data.run)
+            ApplySingle("jump",data.jump)
+            ApplySingle("climb",data.climb)
+            ApplySingle("fall",data.fall)
         end
     })
 end
 
 --========================================================--
--- POSE LIST
+-- ONLY TABS
 --========================================================--
-PoseTab:CreateButton({
-    Name = "⛔ STOP ANIMATION",
-    Callback = function()
-        if currentPose then
-            pcall(function() currentPose:Stop() end)
-        end
-        StopAnim()
+local function CreateOnlyTab(tabName, category)
+    local tab = gui:tab{
+        Name = tabName,
+        Icon = "rbxassetid://6034996695"
+    }
+
+    for name,data in pairs(ANIMS) do
+        tab:button({
+            Name = name,
+            Callback = function()
+                if category == "idle" then
+                    ApplySingle("idle",{idle1=data.idle1,idle2=data.idle2})
+                else
+                    ApplySingle(category,data[category])
+                end
+            end
+        })
     end
+end
+
+CreateOnlyTab("IDLE Only","idle")
+CreateOnlyTab("WALK Only","walk")
+CreateOnlyTab("RUN Only","run")
+CreateOnlyTab("JUMP Only","jump")
+CreateOnlyTab("CLIMB Only","climb")
+CreateOnlyTab("FALL Only","fall")
+
+--========================================================--
+-- POSE TAB
+--========================================================--
+local PoseTab = gui:tab{
+    Name = "Pose",
+    Icon = "rbxassetid://6034996695"
+}
+
+PoseTab:button({
+    Name = "⛔ STOP ANIMATION",
+    Callback = StopAnim
 })
+
+local function AddPose(name,id)
+    PoseTab:button({
+        Name = name,
+        Callback = function()
+            PlayAnim(id,{value=currentPose})
+        end
+    })
+end
 
 AddPose("ACELERADA", "rbxassetid://103360497719320")
 AddPose("ANIM1", "rbxassetid://73980801925168")
@@ -145,268 +258,35 @@ AddPose("POSE46", "rbxassetid://129877311087446")
 AddPose("POSE47", "rbxassetid://138100149715377")
 
 --========================================================--
--- STOP ALL ANIMATIONS
---========================================================--
-
-local function StopAnim()
-    if not plr.Character then return end
-
-    local humanoid = plr.Character:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return end
-
-    for _, track in ipairs(humanoid:GetPlayingAnimationTracks()) do
-        pcall(function() track:Stop() end)
-    end
-end
-
---========================================================--
--- NORMALIZE ANIMATION ID
---========================================================--
-
-local function norm(id)
-    if not id then return "" end
-    id = tostring(id):gsub("%s+", "")
-    if id == "" then return "" end
-    if id:match("rbxassetid://") then return id end
-    local num = id:match("(%d+)")
-    if num then return "rbxassetid://" .. num end
-    return id
-end
-
---========================================================--
--- APPLY ANIMATION
---========================================================--
-
-local function ApplySingle(category, animID)
-    if not plr.Character then return end
-
-    local Animate = plr.Character:FindFirstChild("Animate")
-    if not Animate then return end
-
-    Animate.Disabled = true
-    StopAnim()
-
-    if category == "idle" then
-        Animate.idle.Animation1.AnimationId = norm(animID.idle1)
-        Animate.idle.Animation2.AnimationId = norm(animID.idle2)
-
-    elseif category == "walk" then
-        Animate.walk.WalkAnim.AnimationId = norm(animID)
-
-    elseif category == "run" then
-        Animate.run.RunAnim.AnimationId = norm(animID)
-
-    elseif category == "jump" then
-        Animate.jump.JumpAnim.AnimationId = norm(animID)
-
-    elseif category == "climb" then
-        Animate.climb.ClimbAnim.AnimationId = norm(animID)
-
-    elseif category == "fall" then
-        Animate.fall.FallAnim.AnimationId = norm(animID)
-    end
-
-    task.wait(0.05)
-    Animate.Disabled = false
-end
-
---========================================================--
--- MASTER ANIMATION LIST
---========================================================--
-
-local ANIMS = {
-    Zombie = {idle1=3489171152,idle2=3489171152,walk=3489174223,run=3489173414,jump=616161997,climb=616156119,fall=616157476},
-    Hero = {idle1=616111295,idle2=616113536,walk=616122287,run=616117076,jump=616113998,climb=616107820,fall=616108936},
-    Ninja = {idle1=656117400,idle2=656118341,walk=656121766,run=656118852,jump=656117878,climb=656114359,fall=656115606},
-    Cartoon = {idle1=742637544,idle2=742638445,walk=742640026,run=742638842,jump=742637942,climb=742636889,fall=742637151},
-    Elder = {idle1=845397899,idle2=845400520,walk=845403044,run=845386501,jump=845398858,climb=845392038,fall=845388394},
-    Vampire = {idle1=1083445855,idle2=1083450166,walk=1083473930,run=1083462077,jump=1083455352,climb=1083439238,fall=1083443587},
-    Werewolf = {idle1=1083195517,idle2=1083214717,walk=1083216690,run=10921336997,jump=1083218792,climb=1083182000,fall=10921337907},
-    Ghost = {idle1=616006778,idle2=616008087,walk=616013216,run=616010382,jump=616008936,climb=616003713,fall=616004713},
-    ZombieClassic = {idle1=616158929,idle2=616160636,walk=616168032,run=616163682,jump=616161997,climb=616156119,fall=616157476},
-    Adidas2 = {idle1=18537376492,idle2=18537371272,walk=18537392113,run=18537384940,jump=18537380791,climb=18537363391,fall=18537367238},
-
-    -- WICKED (NEW)
-    Wicked = {
-        idle1 = "rbxassetid://92849173543269",
-        idle2 = "rbxassetid://132238900951109",
-        walk  = "rbxassetid://73718308412641",
-        run   = "rbxassetid://135515454877967",
-        jump  = "rbxassetid://78508480717326",
-        climb = "rbxassetid://129447497744818",
-        fall  = "rbxassetid://78147885297412",
-        pose  = "rbxassetid://87867222929430"
-    },
-}
-
---========================================================--
--- PRESET TAB
---========================================================--
-
-local PresetTab = Window:CreateTab("Full Presets")
-PresetTab:CreateSection("Full Animation Sets")
-
-for name, data in pairs(ANIMS) do
-    PresetTab:CreateButton({
-        Name = name,
-        Callback = function()
-            ApplySingle("idle",{idle1=data.idle1,idle2=data.idle2})
-            ApplySingle("walk",data.walk)
-            ApplySingle("run",data.run)
-            ApplySingle("jump",data.jump)
-            ApplySingle("climb",data.climb)
-            ApplySingle("fall",data.fall)
-        end
-    })
-end
-
---========================================================--
--- CATEGORY TABS
---========================================================--
-
-local function CreateSingleTab(tabName, category)
-    local tab = Window:CreateTab(tabName)
-    tab:CreateSection(tabName)
-
-    for name, data in pairs(ANIMS) do
-        tab:CreateButton({
-            Name = name,
-            Callback = function()
-                if category == "idle" then
-                    ApplySingle("idle",{idle1=data.idle1,idle2=data.idle2})
-                else
-                    ApplySingle(category, data[category])
-                end
-            end
-        })
-    end
-end
-
-CreateSingleTab("IDLE Only","idle")
-CreateSingleTab("WALK Only","walk")
-CreateSingleTab("RUN Only","run")
-CreateSingleTab("JUMP Only","jump")
-CreateSingleTab("CLIMB Only","climb")
-CreateSingleTab("FALL Only","fall")
-
---========================================================--
--- LOCAL PLAYER TAB
---========================================================--
-
-local LocalTab = Window:CreateTab(plr.Name)
-LocalTab:CreateSection("Movement")
-
-LocalTab:CreateSlider({
-    Name = "WalkSpeed",
-    Range = {1,200},
-    Increment = 1,
-    CurrentValue = 16,
-    Callback = function(v)
-        if plr.Character then
-            local h = plr.Character:FindFirstChildOfClass("Humanoid")
-            if h then h.WalkSpeed = v end
-        end
-    end,
-})
-
---========================================================--
--- INFINITE JUMP
---========================================================--
-
-local UIS = game:GetService("UserInputService")
-local infJump
-local infJumpDebounce = false
-
-LocalTab:CreateToggle({
-    Name = "Infinite Jump",
-    CurrentValue = false,
-    Callback = function(state)
-
-        -- jika toggle dimatikan
-        if not state then
-            if infJump then infJump:Disconnect() end
-            infJumpDebounce = false
-            return
-        end
-
-        -- jika toggle dihidupkan
-        if infJump then infJump:Disconnect() end
-        infJumpDebounce = false
-
-        infJump = UIS.JumpRequest:Connect(function()
-            if not infJumpDebounce then
-                infJumpDebounce = true
-
-                local char = plr.Character
-                if not char then return end
-
-                local hum = char:FindFirstChildWhichIsA("Humanoid")
-                if hum then
-                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
-                end
-
-                task.wait(0.2) 
-                infJumpDebounce = false
-            end
-        end)
-
-    end
-})
-
-
---========================================================--
 -- EMOTE TAB
 --========================================================--
+local EmoteTab = gui:tab{
+    Name = "Emote",
+    Icon = "rbxassetid://6034996695"
+}
 
-local EmotTab = Window:CreateTab("Emot")
-EmotTab:CreateSection("Play Emotes")
-
-local currentEmote
-
-local function PlayEmote(animId)
-    StopAnim()
-
-    if currentEmote then
-        pcall(function() currentEmote:Stop() end)
-    end
-
-    local char = plr.Character
-    if not char then return end
-
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-
-    local anim = Instance.new("Animation")
-    anim.AnimationId = animId
-
-    currentEmote = hum:LoadAnimation(anim)
-    currentEmote:Play()
-end
-
-local function AddEmoteButton(name, id)
-    EmotTab:CreateButton({
+local function AddEmote(name,id)
+    EmoteTab:button({
         Name = name,
         Callback = function()
-            PlayEmote(id)
+            PlayAnim(id,{value=currentEmote})
         end
     })
 end
 
--- Emot
-AddEmoteButton("Rakai", "rbxassetid://71494363833326")
-AddEmoteButton("Michael", "rbxassetid://88285541926517")
-AddEmoteButton("Hip Sway", "rbxassetid://138316142522795")
-AddEmoteButton("Skibidi Shake", "rbxassetid://129069398913210")
-AddEmoteButton("Jason Vorhees Meme Dance", "rbxassetid://82633819892658")
-AddEmoteButton("Kid tantrum", "rbxassetid://86339673982616")
-AddEmoteButton("Spin Around", "rbxassetid://80407560356039")
-AddEmoteButton("Shuffling", "rbxassetid://118468821959324")
-AddEmoteButton("Jumpstyle Dance", "rbxassetid://112773902133223")
-AddEmoteButton("Speed Mirage", "rbxassetid://96731289267640")
-AddEmoteButton("Sturdy NYC Dance", "rbxassetid://140333103929828")
+AddEmote("Rakai", "rbxassetid://71494363833326")
+AddEmote("Michael", "rbxassetid://88285541926517")
+AddEmote("Hip Sway", "rbxassetid://138316142522795")
+AddEmote("Skibidi Shake", "rbxassetid://129069398913210")
+AddEmote("Jason Vorhees Meme Dance", "rbxassetid://82633819892658")
+AddEmote("Kid tantrum", "rbxassetid://86339673982616")
+AddEmote("Spin Around", "rbxassetid://80407560356039")
+AddEmote("Shuffling", "rbxassetid://118468821959324")
+AddEmote("Jumpstyle Dance", "rbxassetid://112773902133223")
+AddEmote("Speed Mirage", "rbxassetid://96731289267640")
+AddEmote("Sturdy NYC Dance", "rbxassetid://140333103929828")
 
--- STOP EMOTE BUTTON
-EmotTab:CreateButton({
+EmoteTab:button({
     Name = "STOP EMOTE",
     Callback = function()
         if currentEmote then
@@ -416,25 +296,64 @@ EmotTab:CreateButton({
 })
 
 --========================================================--
--- SIMPLE FLY + UI STATUS
+-- LOCAL PLAYER TAB
 --========================================================--
+local LocalTab = gui:tab{
+    Name = "Local",
+    Icon = "rbxassetid://6034996695"
+}
 
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+LocalTab:slider({
+    Name = "WalkSpeed",
+    Default = 16,
+    Min = 1,
+    Max = 200,
+    Callback = function(v)
+        local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = v end
+    end
+})
+
+-- Infinite Jump
+local infJump
+local debounce = false
+
+LocalTab:toggle({
+    Name = "Infinite Jump",
+    StartingState = false,
+    Callback = function(state)
+        if not state then
+            if infJump then infJump:Disconnect() end
+            debounce = false
+            return
+        end
+
+        infJump = UIS.JumpRequest:Connect(function()
+            if debounce then return end
+            debounce = true
+
+            local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+
+            task.wait(0.2)
+            debounce = false
+        end)
+    end
+})
+
+--========================================================--
+-- FLY
+--========================================================--
 
 local flying = false
 local flySpeed = 50
-local bv
-local gy
-local flyLoop
+local bv, gy, flyLoop
 
-local flyStatusLabel = LocalTab:CreateLabel("Fly Status: OFF")
-
-LocalTab:CreateSlider({
+LocalTab:slider({
     Name = "Fly Speed",
-    Range = {10,200},
-    Increment = 5,
-    CurrentValue = flySpeed,
+    Default = 50,
+    Min = 10,
+    Max = 200,
     Callback = function(v)
         flySpeed = v
     end
@@ -443,53 +362,119 @@ LocalTab:CreateSlider({
 local function StartFly()
     if flying then return end
     flying = true
-    flyStatusLabel:Set("Fly Status: ON")
 
     local char = plr.Character
-    local hrp = char:WaitForChild("HumanoidRootPart")
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
 
-    bv = Instance.new("BodyVelocity")
-    bv.Velocity = Vector3.new(0,0,0)
+    bv = Instance.new("BodyVelocity",hrp)
     bv.MaxForce = Vector3.new(1e5,1e5,1e5)
-    bv.Parent = hrp
 
-    gy = Instance.new("BodyGyro")
-    gy.D = 0
-    gy.P = 9e4
+    gy = Instance.new("BodyGyro",hrp)
     gy.MaxTorque = Vector3.new(1e5,1e5,1e5)
-    gy.CFrame = hrp.CFrame
-    gy.Parent = hrp
+    gy.P = 9e4
 
     flyLoop = RunService.RenderStepped:Connect(function()
         local cam = workspace.CurrentCamera
-        local direction = Vector3.new(0,0,0)
+        local dir = Vector3.zero
 
-        if UIS:IsKeyDown(Enum.KeyCode.W) then direction += cam.CFrame.LookVector end
-        if UIS:IsKeyDown(Enum.KeyCode.S) then direction -= cam.CFrame.LookVector end
-        if UIS:IsKeyDown(Enum.KeyCode.A) then direction -= cam.CFrame.RightVector end
-        if UIS:IsKeyDown(Enum.KeyCode.D) then direction += cam.CFrame.RightVector end
-        if UIS:IsKeyDown(Enum.KeyCode.Space) then direction += Vector3.new(0,1,0) end
-        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then direction -= Vector3.new(0,1,0) end
+        if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
+        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0,1,0) end
 
-        if direction.Magnitude > 0 then direction = direction.Unit end
-        bv.Velocity = direction * flySpeed
+        if dir.Magnitude > 0 then dir = dir.Unit end
+        bv.Velocity = dir * flySpeed
         gy.CFrame = cam.CFrame
     end)
 end
 
 local function StopFly()
     flying = false
-    flyStatusLabel:Set("Fly Status: OFF")
-
     if flyLoop then flyLoop:Disconnect() end
     if bv then bv:Destroy() end
     if gy then gy:Destroy() end
 end
 
-UIS.InputBegan:Connect(function(input,gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.F then
+LocalTab:toggle({
+    Name = "Fly (F)",
+    Callback = function(v)
+        if v then StartFly() else StopFly() end
+    end
+})
+
+UIS.InputBegan:Connect(function(i,gp)
+    if gp then return end
+    if i.KeyCode == Enum.KeyCode.F then
         if flying then StopFly() else StartFly() end
     end
 end)
 
+--========================================================--
+-- PLAYER TAB
+--========================================================--
+local PlayerTab = gui:tab{
+    Name = "Players",
+    Icon = "rbxassetid://6034996695"
+}
+
+local selectedPlayer
+
+local function GetPlayers()
+    local t = {}
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p ~= plr then
+            table.insert(t,p.Name)
+        end
+    end
+    return t
+end
+
+local dropdown = PlayerTab:dropdown({
+    Name = "Select Player",
+    Items = GetPlayers(),
+    Callback = function(v)
+        selectedPlayer = v
+    end
+})
+
+PlayerTab:button({
+    Name = "🔄 Refresh Player List",
+    Callback = function()
+        dropdown:SetItems(GetPlayers())
+    end
+})
+
+PlayerTab:button({
+    Name = "Teleport To Player",
+    Callback = function()
+        local target = Players:FindFirstChild(selectedPlayer or "")
+        if target and target.Character and plr.Character then
+            plr.Character.HumanoidRootPart.CFrame =
+                target.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,-3)
+        end
+    end
+})
+
+PlayerTab:button({
+    Name = "View / Spectate Player",
+    Callback = function()
+        local target = Players:FindFirstChild(selectedPlayer or "")
+        if target and target.Character then
+            workspace.CurrentCamera.CameraSubject =
+                target.Character:FindFirstChildOfClass("Humanoid")
+        end
+    end
+})
+
+PlayerTab:button({
+    Name = "Stop Spectate",
+    Callback = function()
+        if plr.Character then
+            workspace.CurrentCamera.CameraSubject =
+                plr.Character:FindFirstChildOfClass("Humanoid")
+        end
+    end
+})
