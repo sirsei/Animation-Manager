@@ -1,15 +1,8 @@
-
---========================================================--
--- SERVICES
---========================================================--
 local Players = game:GetService("Players")
 local plr = Players.LocalPlayer
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
---========================================================--
--- MERCURY UI
---========================================================--
 local Library = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"
 ))()
@@ -18,9 +11,6 @@ local gui = Library:create{
     Theme = Library.Themes.Serika
 }
 
---========================================================--
--- CORE ANIMATION FUNCTIONS
---========================================================--
 local currentPose
 local currentEmote
 
@@ -54,9 +44,6 @@ local function PlayAnim(id, store)
     end
 end
 
---========================================================--
--- PRESET SYSTEM (RAYFIELD PORT)
---========================================================--
 local function norm(id)
     if not id then return "" end
     id = tostring(id)
@@ -87,9 +74,6 @@ local function ApplySingle(category, animID)
     Animate.Disabled = false
 end
 
---========================================================--
--- PRESET DATA (EXACT RAYFIELD)
---========================================================--
 local ANIMS = {
     Zombie = {idle1=3489171152,idle2=3489171152,walk=3489174223,run=3489173414,jump=616161997,climb=616156119,fall=616157476},
     Hero = {idle1=616111295,idle2=616113536,walk=616122287,run=616117076,jump=616113998,climb=616107820,fall=616108936},
@@ -104,9 +88,6 @@ local ANIMS = {
     Wicked = {idle1 =92849173543269,idle2=132238900951109,walk =73718308412641,run=135515454877967,jump=78508480717326,climb=129447497744818,fall=78147885297412,pose=87867222929430},      
 }
 
---========================================================--
--- PRESET TAB (FULL)
---========================================================--
 local PresetTab = gui:tab{
     Name = "Full Presets",
     Icon = "rbxassetid://6034996695"
@@ -126,9 +107,6 @@ for name,data in pairs(ANIMS) do
     })
 end
 
---========================================================--
--- ONLY TABS
---========================================================--
 local function CreateOnlyTab(tabName, category)
     local tab = gui:tab{
         Name = tabName,
@@ -156,9 +134,6 @@ CreateOnlyTab("JUMP Only","jump")
 CreateOnlyTab("CLIMB Only","climb")
 CreateOnlyTab("FALL Only","fall")
 
---========================================================--
--- POSE TAB
---========================================================--
 local PoseTab = gui:tab{
     Name = "Pose",
     Icon = "rbxassetid://6034996695"
@@ -257,9 +232,6 @@ AddPose("POSE45", "rbxassetid://95322520651018")
 AddPose("POSE46", "rbxassetid://129877311087446")
 AddPose("POSE47", "rbxassetid://138100149715377")
 
---========================================================--
--- EMOTE TAB
---========================================================--
 local EmoteTab = gui:tab{
     Name = "Emote",
     Icon = "rbxassetid://6034996695"
@@ -295,9 +267,6 @@ EmoteTab:button({
     end
 })
 
---========================================================--
--- LOCAL PLAYER TAB
---========================================================--
 local LocalTab = gui:tab{
     Name = "Local",
     Icon = "rbxassetid://6034996695"
@@ -340,10 +309,6 @@ LocalTab:toggle({
         end)
     end
 })
-
---========================================================--
--- FLY
---========================================================--
 
 local flying = false
 local flySpeed = 50
@@ -412,9 +377,6 @@ UIS.InputBegan:Connect(function(i,gp)
     end
 end)
 
---========================================================--
--- PLAYER TAB
---========================================================--
 local PlayerTab = gui:tab{
     Name = "Players",
     Icon = "rbxassetid://6034996695"
