@@ -13,13 +13,18 @@ local gui = Library:create{
 
 local currentPose
 local currentEmote
+local flying = false
+local noclip = false
+local flySpeed = 50
+local lastWalkSpeed = 16
+local bv, gy, flyLoop, noclipLoop
 
+-- [ INTERNAL FUNCTIONS ]
 local function StopAnim()
     local char = plr.Character
     if not char then return end
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
-
     for _,track in ipairs(hum:GetPlayingAnimationTracks()) do
         pcall(function() track:Stop() end)
     end
@@ -30,18 +35,13 @@ local function PlayAnim(id, store)
     if store and store.value then
         pcall(function() store.value:Stop() end)
     end
-
     local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
     if not hum then return end
-
     local anim = Instance.new("Animation")
     anim.AnimationId = id
     local track = hum:LoadAnimation(anim)
     track:Play()
-
-    if store then
-        store.value = track
-    end
+    if store then store.value = track end
 end
 
 local function norm(id)
@@ -55,26 +55,34 @@ end
 local function ApplySingle(category, animID)
     local char = plr.Character
     if not char then return end
-
     local Animate = char:FindFirstChild("Animate")
     if not Animate then return end
-
     Animate.Disabled = true
     StopAnim()
-
     if category == "idle" then
         Animate.idle.Animation1.AnimationId = norm(animID.idle1)
         Animate.idle.Animation2.AnimationId = norm(animID.idle2)
+    elseif category == "swim" then
+        if Animate:FindFirstChild("swim") then Animate.swim.SwimAnim.AnimationId = norm(animID.swim) end
+        if Animate:FindFirstChild("swimidle") then Animate.swimidle.SwimidleAnim.AnimationId = norm(animID.swimidle) end
     else
-        Animate[category][category:gsub("^%l", string.upper).."Anim"].AnimationId =
-            norm(animID)
+        local folder = Animate:FindFirstChild(category)
+        if folder then
+            local name = category:gsub("^%l", string.upper).."Anim"
+            local animObj = folder:FindFirstChild(name) or folder:FindFirstChildOfClass("Animation")
+            if animObj then animObj.AnimationId = norm(animID) end
+        end
     end
-
     task.wait(0.05)
     Animate.Disabled = false
 end
 
 local ANIMS = {
+    AmazonUnboxed = {
+        idle1=98281136301627, idle2=138183121662404, walk=90478085024465, run=134824450619865,
+        jump=121454505477205, climb=121145883950231, fall=94788218468396, swim=105962919001086,
+        swimidle=129126268464847, pose=133117300343405
+    },
     Zombie = {idle1=3489171152,idle2=3489171152,walk=3489174223,run=3489173414,jump=616161997,climb=616156119,fall=616157476},
     Hero = {idle1=616111295,idle2=616113536,walk=616122287,run=616117076,jump=616113998,climb=616107820,fall=616108936},
     Ninja = {idle1=656117400,idle2=656118341,walk=656121766,run=656118852,jump=656117878,climb=656114359,fall=656115606},
@@ -85,358 +93,178 @@ local ANIMS = {
     Ghost = {idle1=616006778,idle2=616008087,walk=616013216,run=616010382,jump=616008936,climb=616003713,fall=616004713},
     ZombieClassic = {idle1=616158929,idle2=616160636,walk=616168032,run=616163682,jump=616161997,climb=616156119,fall=616157476},
     Adidas2 = {idle1=18537376492,idle2=18537371272,walk=18537392113,run=18537384940,jump=18537380791,climb=18537363391,fall=18537367238},
-    Wicked = {idle1 =92849173543269,idle2=132238900951109,walk =73718308412641,run=135515454877967,jump=78508480717326,climb=129447497744818,fall=78147885297412,pose=87867222929430},      
+    Wicked = {idle1=92849173543269,idle2=132238900951109,walk=73718308412641,run=135515454877967,jump=78508480717326,climb=129447497744818,fall=78147885297412,pose=87867222929430},      
 }
 
-local PresetTab = gui:tab{
-    Name = "Full Presets",
-    Icon = "rbxassetid://6034996695"
-}
+local function StopFly()
+    flying = false
+    noclip = false
+    if flyLoop then flyLoop:Disconnect() end
+    if noclipLoop then noclipLoop:Disconnect() end
+    if bv then bv:Destroy() end
+    if gy then gy:Destroy() end
+    local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+    if hum then 
+        hum.WalkSpeed = lastWalkSpeed
+        hum:ChangeState(Enum.HumanoidStateType.GettingUp) 
+    end
+end
 
-for name,data in pairs(ANIMS) do
+local function StartFly()
+    if flying then return end
+    local char = plr.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    flying = true
+    noclip = true
+    lastWalkSpeed = hum.WalkSpeed
+    hum.WalkSpeed = 0 
+
+    bv = Instance.new("BodyVelocity", hrp)
+    bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
+    bv.Velocity = Vector3.zero
+    
+    gy = Instance.new("BodyGyro", hrp)
+    gy.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
+    gy.P = 3000
+    gy.D = 500
+
+    flyLoop = RunService.RenderStepped:Connect(function()
+        local cam = workspace.CurrentCamera
+        local dir = Vector3.zero
+        if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
+        if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
+        if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0, 1, 0) end
+        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0, 1, 0) end
+        bv.Velocity = dir.Magnitude > 0 and (dir.Unit * flySpeed) or Vector3.zero
+        local camLook = cam.CFrame.LookVector
+        gy.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + Vector3.new(camLook.X, 0, camLook.Z))
+        hum:ChangeState(Enum.HumanoidStateType.Physics)
+    end)
+
+    noclipLoop = RunService.Stepped:Connect(function()
+        if noclip and char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        end
+    end)
+end
+
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        if flying then StopFly() else StartFly() end
+    end
+end)
+local PresetTab = gui:tab{ Name = "Full Presets", Icon = "rbxassetid://6034996695" }
+for name, data in pairs(ANIMS) do
     PresetTab:button({
         Name = name,
         Callback = function()
-            ApplySingle("idle",{idle1=data.idle1,idle2=data.idle2})
-            ApplySingle("walk",data.walk)
-            ApplySingle("run",data.run)
-            ApplySingle("jump",data.jump)
-            ApplySingle("climb",data.climb)
-            ApplySingle("fall",data.fall)
+            ApplySingle("idle", {idle1=data.idle1, idle2=data.idle2 or data.idle1})
+            ApplySingle("walk", data.walk)
+            ApplySingle("run", data.run)
+            ApplySingle("jump", data.jump)
+            ApplySingle("climb", data.climb)
+            ApplySingle("fall", data.fall)
+            if data.swim then ApplySingle("swim", {swim=data.swim, swimidle=data.swimidle or data.swim}) end
         end
     })
 end
 
 local function CreateOnlyTab(tabName, category)
-    local tab = gui:tab{
-        Name = tabName,
-        Icon = "rbxassetid://6034996695"
-    }
-
-    for name,data in pairs(ANIMS) do
-        tab:button({
-            Name = name,
-            Callback = function()
-                if category == "idle" then
-                    ApplySingle("idle",{idle1=data.idle1,idle2=data.idle2})
-                else
-                    ApplySingle(category,data[category])
+    local tab = gui:tab{ Name = tabName, Icon = "rbxassetid://6034996695" }
+    for name, data in pairs(ANIMS) do
+        if data[category] or (category == "idle" and data.idle1) then
+            tab:button({
+                Name = name,
+                Callback = function()
+                    if category == "idle" then
+                        ApplySingle("idle", {idle1=data.idle1, idle2=data.idle2 or data.idle1})
+                    elseif category == "swim" and data.swim then
+                        ApplySingle("swim", {swim=data.swim, swimidle=data.swimidle or data.swim})
+                    else
+                        if data[category] then ApplySingle(category, data[category]) end
+                    end
                 end
-            end
-        })
-    end
-end
-
-CreateOnlyTab("IDLE Only","idle")
-CreateOnlyTab("WALK Only","walk")
-CreateOnlyTab("RUN Only","run")
-CreateOnlyTab("JUMP Only","jump")
-CreateOnlyTab("CLIMB Only","climb")
-CreateOnlyTab("FALL Only","fall")
-
-local PoseTab = gui:tab{
-    Name = "Pose",
-    Icon = "rbxassetid://6034996695"
-}
-
-PoseTab:button({
-    Name = "⛔ STOP ANIMATION",
-    Callback = StopAnim
-})
-
-local function AddPose(name,id)
-    PoseTab:button({
-        Name = name,
-        Callback = function()
-            PlayAnim(id,{value=currentPose})
-        end
-    })
-end
-
-AddPose("ACELERADA", "rbxassetid://103360497719320")
-AddPose("ANIM1", "rbxassetid://73980801925168")
-AddPose("ANIM2", "rbxassetid://10713992055")
-AddPose("Bagoyang", "rbxassetid://96100759913198")
-AddPose("Bagoyang2", "rbxassetid://83650099589962")
-AddPose("Berlutut", "rbxassetid://107990372400562")
-AddPose("Coolsit", "rbxassetid://126899447275562")
-AddPose("Coupleberlutut", "rbxassetid://94211368534890")
-AddPose("MOSH", "rbxassetid://96147994216119")
-AddPose("Make You Mine", "rbxassetid://98951659625746")
-AddPose("POSE1", "rbxassetid://99499783161907")
-AddPose("POSE10", "rbxassetid://108222576174226")
-AddPose("POSE11", "rbxassetid://137036559253683")
-AddPose("POSE12", "rbxassetid://108078321099716")
-AddPose("POSE13", "rbxassetid://110273858656000")
-AddPose("POSE14", "rbxassetid://97185364700038")
-AddPose("POSE15", "rbxassetid://136687532783709")
-AddPose("POSE16", "rbxassetid://70472458721219")
-AddPose("POSE17", "rbxassetid://83984152269870")
-AddPose("POSE18", "rbxassetid://10714377090")
-AddPose("POSE19", "rbxassetid://15392759696")
-AddPose("POSE2", "rbxassetid://130198479813020")
-AddPose("POSE20", "rbxassetid://118485763841250")
-AddPose("POSE3", "rbxassetid://128398454311626")
-AddPose("POSE4", "rbxassetid://117181705578424")
-AddPose("POSE5", "rbxassetid://93731275877969")
-AddPose("POSE6", "rbxassetid://129100070542534")
-AddPose("POSE7", "rbxassetid://92484091561265")
-AddPose("POSE8", "rbxassetid://123742750287999")
-AddPose("POSE9", "rbxassetid://77038516022976")
-AddPose("Rebahan1", "rbxassetid://89288588607946")
-AddPose("Sendertembok", "rbxassetid://112018126760165")
-AddPose("Side Hug 1", "rbxassetid://89930880557935")
-AddPose("megangmic", "rbxassetid://112495126839532")
-AddPose("POSE21", "rbxassetid://138616803184969")
-AddPose("POSE22", "rbxassetid://95128526244610")
-AddPose("POSE23", "rbxassetid://72526127498800")
-AddPose("ANIM3", "rbxassetid://10714061912")
-AddPose("POSE24", "rbxassetid://10714349037")
-AddPose("SIGN SUFFLE", "rbxassetid://112931882473990")
-AddPose("POSE25", "rbxassetid://10714349037")
-AddPose("POSE26", "rbxassetid://89973831894197")
-AddPose("SHAKE IT", "rbxassetid://115318724645140")
-AddPose("POSE27", "rbxassetid://114388371896974")
-AddPose("POSE28", "rbxassetid://122746752555782")
-AddPose("SAD SIT", "rbxassetid://95187207564838")
-AddPose("POSE29", "rbxassetid://115044428254622")
-AddPose("POSE30", "rbxassetid://104714163485875")
-AddPose("POSE31", "rbxassetid://78737936680054")
-AddPose("POSE32", "rbxassetid://121760229357537")
-AddPose("DUDUK", "rbxassetid://112779764845963")
-AddPose("POSE33", "rbxassetid://93810591156861")
-AddPose("SIDE HUG 2", "rbxassetid://74176972084963")
-AddPose("POSE34", "rbxassetid://98352002677627")
-AddPose("DUNK 1", "rbxassetid://107337950964411")
-AddPose("DUNK 2", "rbxassetid://110624953380390")
-AddPose("POSE35", "rbxassetid://84512654543692")
-AddPose("POSE36", "rbxassetid://92426508778045")
-AddPose("Kawaii Pose 1", "rbxassetid://96376821038955")
-AddPose("Kawaii Pose 2", "rbxassetid://139190721467230")
-AddPose("Kawaii Pose 3", "rbxassetid://135842862213366")
-AddPose("Kawaii Pose 4", "rbxassetid://109101975595639")
-AddPose("Kawaii Pose 5", "rbxassetid://88408967178570")
-AddPose("Kawaii Pose 6", "rbxassetid://134367697023729")
-AddPose("Kawaii Pose 7", "rbxassetid://106567587812858")
-AddPose("Kawaii Pose 8", "rbxassetid://109625571708575")
-AddPose("POSE37", "rbxassetid://75882131460757")
-AddPose("POSE38", "rbxassetid://113694692828125")
-AddPose("POSE39", "rbxassetid://79137761903782")
-AddPose("Kawaii Pose 9", "rbxassetid://93252808310422")
-AddPose("POSE40", "rbxassetid://139853858727379")
-AddPose("POSE41", "rbxassetid://138429027900975")
-AddPose("POSE42", "rbxassetid://103367332698944")
-AddPose("POSE43", "rbxassetid://117364803222287")
-AddPose("POSE44", "rbxassetid://92851417275538")
-AddPose("POSE45", "rbxassetid://95322520651018")
-AddPose("POSE46", "rbxassetid://129877311087446")
-AddPose("POSE47", "rbxassetid://138100149715377")
-
-local EmoteTab = gui:tab{
-    Name = "Emote",
-    Icon = "rbxassetid://6034996695"
-}
-
-local function AddEmote(name,id)
-    EmoteTab:button({
-        Name = name,
-        Callback = function()
-            PlayAnim(id,{value=currentEmote})
-        end
-    })
-end
-
-AddEmote("Rakai", "rbxassetid://71494363833326")
-AddEmote("Michael", "rbxassetid://88285541926517")
-AddEmote("Hip Sway", "rbxassetid://138316142522795")
-AddEmote("Skibidi Shake", "rbxassetid://129069398913210")
-AddEmote("Jason Vorhees Meme Dance", "rbxassetid://82633819892658")
-AddEmote("Kid tantrum", "rbxassetid://86339673982616")
-AddEmote("Spin Around", "rbxassetid://80407560356039")
-AddEmote("Shuffling", "rbxassetid://118468821959324")
-AddEmote("Jumpstyle Dance", "rbxassetid://112773902133223")
-AddEmote("Speed Mirage", "rbxassetid://96731289267640")
-AddEmote("Sturdy NYC Dance", "rbxassetid://140333103929828")
-
-EmoteTab:button({
-    Name = "STOP EMOTE",
-    Callback = function()
-        if currentEmote then
-            pcall(function() currentEmote:Stop() end)
+            })
         end
     end
+end
+
+CreateOnlyTab("IDLE Only", "idle")
+CreateOnlyTab("WALK Only", "walk")
+CreateOnlyTab("RUN Only", "run")
+CreateOnlyTab("JUMP Only", "jump")
+CreateOnlyTab("CLIMB Only", "climb")
+CreateOnlyTab("FALL Only", "fall")
+CreateOnlyTab("SWIM Only", "swim")
+
+-- POSE TAB (Hanya Amazon)
+local PoseTab = gui:tab{ Name = "Pose", Icon = "rbxassetid://6034996695" }
+PoseTab:button({ Name = "⛔ STOP ANIMATION", Callback = StopAnim })
+PoseTab:button({ 
+    Name = "AMAZON POSE", 
+    Callback = function() PlayAnim(norm("133117300343405"), {value=currentPose}) end 
 })
 
-local LocalTab = gui:tab{
-    Name = "Local",
-    Icon = "rbxassetid://6034996695"
-}
+-- EMOTE TAB
+local EmoteTab = gui:tab{ Name = "Emote", Icon = "rbxassetid://6034996695" }
+local function AddEmote(n,id) 
+    EmoteTab:button({ Name = n, Callback = function() PlayAnim(norm(id),{value=currentEmote}) end }) 
+end
+AddEmote("Rakai", "71494363833326") 
+AddEmote("Michael", "88285541926517") 
+AddEmote("Hip Sway", "138316142522795") 
+AddEmote("NYC Sturdy", "140333103929828")
+EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote then currentEmote:Stop() end StopAnim() end })
 
-LocalTab:slider({
-    Name = "WalkSpeed",
-    Default = 16,
-    Min = 1,
-    Max = 200,
-    Callback = function(v)
+-- LOCAL TAB
+local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
+LocalTab:slider({ Name = "Fly Speed", Default = 50, Min = 10, Max = 300, Callback = function(v) flySpeed = v end })
+LocalTab:toggle({ Name = "Fly (F) + Noclip", Callback = function(v) if v then StartFly() else StopFly() end end })
+
+local infJumpEnabled = false
+local jumpDebounce = false
+UIS.JumpRequest:Connect(function()
+    if infJumpEnabled then
         local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed = v end
-    end
-})
-
--- Infinite Jump
-local infJump
-local debounce = false
-
-LocalTab:toggle({
-    Name = "Infinite Jump",
-    StartingState = false,
-    Callback = function(state)
-        if not state then
-            if infJump then infJump:Disconnect() end
-            debounce = false
-            return
+        if hum and not jumpDebounce then
+            jumpDebounce = true
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            task.wait(0.1)
+            jumpDebounce = false
         end
-
-        infJump = UIS.JumpRequest:Connect(function()
-            if debounce then return end
-            debounce = true
-
-            local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-
-            task.wait(0.2)
-            debounce = false
-        end)
-    end
-})
-
-local flying = false
-local flySpeed = 50
-local bv, gy, flyLoop
-
-LocalTab:slider({
-    Name = "Fly Speed",
-    Default = 50,
-    Min = 10,
-    Max = 200,
-    Callback = function(v)
-        flySpeed = v
-    end
-})
-
-local function StartFly()
-    if flying then return end
-    flying = true
-
-    local char = plr.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    bv = Instance.new("BodyVelocity",hrp)
-    bv.MaxForce = Vector3.new(1e5,1e5,1e5)
-
-    gy = Instance.new("BodyGyro",hrp)
-    gy.MaxTorque = Vector3.new(1e5,1e5,1e5)
-    gy.P = 9e4
-
-    flyLoop = RunService.RenderStepped:Connect(function()
-        local cam = workspace.CurrentCamera
-        local dir = Vector3.zero
-
-        if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
-        if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
-        if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
-        if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
-        if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0,1,0) end
-        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0,1,0) end
-
-        if dir.Magnitude > 0 then dir = dir.Unit end
-        bv.Velocity = dir * flySpeed
-        gy.CFrame = cam.CFrame
-    end)
-end
-
-local function StopFly()
-    flying = false
-    if flyLoop then flyLoop:Disconnect() end
-    if bv then bv:Destroy() end
-    if gy then gy:Destroy() end
-end
-
-LocalTab:toggle({
-    Name = "Fly (F)",
-    Callback = function(v)
-        if v then StartFly() else StopFly() end
-    end
-})
-
-UIS.InputBegan:Connect(function(i,gp)
-    if gp then return end
-    if i.KeyCode == Enum.KeyCode.F then
-        if flying then StopFly() else StartFly() end
     end
 end)
+LocalTab:toggle({ Name = "Infinite Jump", Callback = function(s) infJumpEnabled = s end })
 
-local PlayerTab = gui:tab{
-    Name = "Players",
-    Icon = "rbxassetid://6034996695"
-}
+LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 250, Callback = function(v) 
+    lastWalkSpeed = v
+    if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then 
+        if not flying then plr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = v end
+    end 
+end})
 
+-- PLAYERS TAB
+local PlayerTab = gui:tab{ Name = "Players", Icon = "rbxassetid://6034996695" }
 local selectedPlayer
-
-local function GetPlayers()
-    local t = {}
-    for _,p in ipairs(Players:GetPlayers()) do
-        if p ~= plr then
-            table.insert(t,p.Name)
-        end
-    end
-    return t
-end
-
-local dropdown = PlayerTab:dropdown({
-    Name = "Select Player",
-    Items = GetPlayers(),
-    Callback = function(v)
-        selectedPlayer = v
-    end
-})
-
-PlayerTab:button({
-    Name = "🔄 Refresh Player List",
-    Callback = function()
-        dropdown:SetItems(GetPlayers())
-    end
-})
-
-PlayerTab:button({
-    Name = "Teleport To Player",
-    Callback = function()
-        local target = Players:FindFirstChild(selectedPlayer or "")
-        if target and target.Character and plr.Character then
-            plr.Character.HumanoidRootPart.CFrame =
-                target.Character.HumanoidRootPart.CFrame * CFrame.new(0,0,-3)
-        end
-    end
-})
-
-PlayerTab:button({
-    Name = "View / Spectate Player",
-    Callback = function()
-        local target = Players:FindFirstChild(selectedPlayer or "")
-        if target and target.Character then
-            workspace.CurrentCamera.CameraSubject =
-                target.Character:FindFirstChildOfClass("Humanoid")
-        end
-    end
-})
-
-PlayerTab:button({
-    Name = "Stop Spectate",
-    Callback = function()
-        if plr.Character then
-            workspace.CurrentCamera.CameraSubject =
-                plr.Character:FindFirstChildOfClass("Humanoid")
-        end
-    end
-})
+local function GetPlayers() local t = {} for _,p in ipairs(Players:GetPlayers()) do if p ~= plr then table.insert(t,p.Name) end end return t end
+local dropdown = PlayerTab:dropdown({ Name = "Select Player", Items = GetPlayers(), Callback = function(v) selectedPlayer = v end })
+PlayerTab:button({ Name = "Refresh List", Callback = function() dropdown:SetItems(GetPlayers()) end })
+PlayerTab:button({ Name = "Teleport", Callback = function() 
+    local t = Players:FindFirstChild(selectedPlayer or "") 
+    if t and t.Character then plr.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame end 
+end})
+PlayerTab:button({ Name = "Spectate", Callback = function() 
+    local t = Players:FindFirstChild(selectedPlayer or "") 
+    if t and t.Character then workspace.CurrentCamera.CameraSubject = t.Character:FindFirstChildOfClass("Humanoid") end 
+end})
+PlayerTab:button({ Name = "Stop Spectate", Callback = function() 
+    if plr.Character then workspace.CurrentCamera.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid") end 
+end})
