@@ -226,7 +226,16 @@ EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote the
 
 -- LOCAL TAB
 local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
-LocalTab:slider({ Name = "Fly Speed", Default = 50, Min = 10, Max = 300, Callback = function(v) flySpeed = v end })
+
+-- ✅ FLY SPEED UNLIMITED SLIDER (Max 5000)
+LocalTab:slider({ 
+    Name = "🚀 Fly Speed (Unlimited)", 
+    Default = 50, 
+    Min = 10, 
+    Max = 5000, 
+    Callback = function(v) flySpeed = v end 
+})
+
 LocalTab:toggle({ Name = "Fly (F) + Noclip", Callback = function(v) if v then StartFly() else StopFly() end end })
 
 local infJumpEnabled = false
