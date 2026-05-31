@@ -2,6 +2,8 @@ local Players = game:GetService("Players")
 local plr = Players.LocalPlayer
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
 local Library = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"
@@ -155,12 +157,48 @@ local function StartFly()
     end)
 end
 
+-- Fixed Server Hop
+local function ServerHop()
+    local Servers = {}
+    local success, result = pcall(function()
+        return game:HttpGetAsync("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+    end)
+    
+    if success and result then
+        local decodeSuccess, decoded = pcall(function()
+            return HttpService:JSONDecode(result)
+        end)
+        
+        if decodeSuccess and decoded and decoded.data then
+            for _, v in ipairs(decoded.data) do
+                if type(v) == "table" and v.playing and v.maxPlayers and v.playing < v.maxPlayers and v.id ~= game.JobId then
+                    table.insert(Servers, v.id)
+                end
+            end
+        end
+    end
+    
+    if #Servers > 0 then
+        TeleportService:TeleportToPlaceInstance(game.PlaceId, Servers[math.random(1, #Servers)], plr)
+    else
+        TeleportService:Teleport(game.PlaceId, plr)
+    end
+end
+
 UIS.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.F then
         if flying then StopFly() else StartFly() end
     end
 end)
+
+-- Loop Heartbeat Walkspeed
+RunService.Heartbeat:Connect(function()
+    if not flying and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
+        plr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = lastWalkSpeed
+    end
+end)
+
 local PresetTab = gui:tab{ Name = "Full Presets", Icon = "rbxassetid://6034996695" }
 for name, data in pairs(ANIMS) do
     PresetTab:button({
@@ -227,6 +265,9 @@ EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote the
 -- LOCAL TAB
 local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
 
+-- Tombol Server Hop
+LocalTab:button({ Name = "🌐 Server Hop", Callback = ServerHop })
+
 -- ✅ FLY SPEED UNLIMITED SLIDER (Max 5000)
 LocalTab:slider({ 
     Name = "🚀 Fly Speed (Unlimited)", 
@@ -255,9 +296,6 @@ LocalTab:toggle({ Name = "Infinite Jump", Callback = function(s) infJumpEnabled 
 
 LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 250, Callback = function(v) 
     lastWalkSpeed = v
-    if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then 
-        if not flying then plr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = v end
-    end 
 end})
 
 -- PLAYERS TAB
