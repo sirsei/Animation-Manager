@@ -9,8 +9,10 @@ local Library = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"
 ))()
 
+local successTheme, chosenTheme = pcall(function() return Library.Themes.Serika end)
+
 local gui = Library:create{
-    Theme = Library.Themes.Serika
+    Theme = successTheme and chosenTheme or nil
 }
 
 local currentPose
