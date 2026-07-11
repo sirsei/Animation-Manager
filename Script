@@ -4,6 +4,8 @@ local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local Library = loadstring(game:HttpGet(
     "https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"
@@ -21,7 +23,9 @@ local flying = false
 local noclip = false
 local flySpeed = 50
 local lastWalkSpeed = 16
-local bv, gy, flyLoop, noclipLoop
+local antiRagdollEnabled = false
+local instantPromptEnabled = false  -- Fitur Baru Toggle
+local bv, gy, flyLoop, noclipLoop, walkSpeedLoop, promptLoop
 
 -- [ INTERNAL FUNCTIONS ]
 local function StopAnim()
@@ -195,11 +199,55 @@ UIS.InputBegan:Connect(function(input, gp)
 end)
 
 -- Loop Heartbeat Walkspeed
-RunService.Heartbeat:Connect(function()
+walkSpeedLoop = RunService.Heartbeat:Connect(function()
     if not flying and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
         plr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = lastWalkSpeed
     end
 end)
+
+-- 🔥 V4 ANTI RAGDOLL LOGIC (SINKRONISASI DENGAN DECOMPILED SCRIPT GAME)
+local RagdollSystem
+pcall(function()
+    RagdollSystem = require(ReplicatedStorage:WaitForChild("RagdollSystemPackage"):WaitForChild("RagdollSystem"))
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if antiRagdollEnabled and RagdollSystem then
+            pcall(function()
+                local localRagdoll = RagdollSystem:getLocalRagdoll()
+                if localRagdoll then
+                    if localRagdoll.isRagdolled and localRagdoll:isRagdolled() then
+                        localRagdoll:deactivateRagdollPhysics()
+                        if RagdollSystem.Remotes and RagdollSystem.Remotes.DeactivateRagdoll then
+                            RagdollSystem.Remotes.DeactivateRagdoll:FireServer()
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- 🔥 INSTANT FIRE PROXIMITY PROMPT LOGIC
+promptLoop = ProximityPromptService.PromptShown:Connect(function(prompt)
+    if instantPromptEnabled then
+        pcall(function()
+            prompt.HoldDuration = 0
+        end)
+    end
+end)
+
+-- Trigger trigger bypass saat kamu menekan tombol interaksi prompt secara manual
+ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
+    if instantPromptEnabled then
+        pcall(function()
+            prompt:InputHoldEnd() -- Selesaikan hold durasi secara instan di sisi client
+        end)
+    end
+end)
+
 
 local PresetTab = gui:tab{ Name = "Full Presets", Icon = "rbxassetid://6034996695" }
 for name, data in pairs(ANIMS) do
@@ -296,9 +344,41 @@ UIS.JumpRequest:Connect(function()
 end)
 LocalTab:toggle({ Name = "Infinite Jump", Callback = function(s) infJumpEnabled = s end })
 
-LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 250, Callback = function(v) 
-    lastWalkSpeed = v
-end})
+-- ✅ ANTI RAGDOLL TOGGLE (V4)
+LocalTab:toggle({ 
+    Name = "🛡️ Anti Ragdoll", 
+    Callback = function(state) 
+        antiRagdollEnabled = state 
+        if state and RagdollSystem then
+            pcall(function()
+                local localRagdoll = RagdollSystem:getLocalRagdoll()
+                if localRagdoll and localRagdoll:isRagdolled() then
+                    localRagdoll:deactivateRagdollPhysics()
+                    RagdollSystem.Remotes.DeactivateRagdoll:FireServer()
+                end
+            end)
+        end
+    end 
+})
+
+-- ✅ NEW FEATURE TOGGLE: INSTANT PROXIMITY PROMPT
+LocalTab:toggle({
+    Name = "⚡ Instant Fire Prompt",
+    Callback = function(state)
+        instantPromptEnabled = state
+    end
+})
+
+-- ✅ WALKSPEED SLIDER UNTIL MAX (Max 5000)
+LocalTab:slider({ 
+    Name = "WalkSpeed", 
+    Default = 16, 
+    Min = 1, 
+    Max = 5000, 
+    Callback = function(v) 
+        lastWalkSpeed = v
+    end
+})
 
 -- PLAYERS TAB
 local PlayerTab = gui:tab{ Name = "Players", Icon = "rbxassetid://6034996695" }
