@@ -25,11 +25,10 @@ local flySpeed = 50
 local lastWalkSpeed = 16
 local antiRagdollEnabled = false
 local instantPromptEnabled = false
-local espEnabled = false -- Toggle ESP induk
-local espLinesEnabled = false -- Toggle Lines/Tracer tambahan
+local espEnabled = false 
+local espLinesEnabled = false 
 local bv, gy, flyLoop, noclipLoop, walkSpeedLoop, promptLoop, espHeartbeatLoop
 
--- [ CACHE DRAWING UNTUK ESP ]
 local espCache = {}
 
 local function CreateESP(player)
@@ -44,7 +43,7 @@ local function CreateESP(player)
 
     local box = Drawing.new("Square")
     box.Visible = false
-    box.Color = Color3.fromRGB(255, 215, 0) -- Gold accent sesuai preferensi mewah
+    box.Color = Color3.fromRGB(255, 215, 0) 
     box.Thickness = 1
     box.Filled = false
 
@@ -57,7 +56,7 @@ local function CreateESP(player)
 
     local tracerLine = Drawing.new("Line")
     tracerLine.Visible = false
-    tracerLine.Color = Color3.fromRGB(0, 191, 255) -- Deep Sky Blue accent
+    tracerLine.Color = Color3.fromRGB(0, 191, 255) 
     tracerLine.Thickness = 1
     tracerLine.Transparency = 0.7
 
@@ -79,14 +78,12 @@ local function RemoveESP(player)
     end
 end
 
--- Inisialisasi player yang sudah ada di game
 for _, p in ipairs(Players:GetPlayers()) do
     if p ~= plr then CreateESP(p) end
 end
 Players.PlayerAdded:Connect(CreateESP)
 Players.PlayerRemoving:Connect(RemoveESP)
 
--- [ INTERNAL FUNCTIONS ANIMATION & FLY ]
 local function StopAnim()
     local char = plr.Character
     if not char then return end
@@ -257,10 +254,12 @@ walkSpeedLoop = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- [ ANTI RAGDOLL LOGIC ]
 local RagdollSystem
 pcall(function()
-    RagdollSystem = require(ReplicatedStorage:WaitForChild("RagdollSystemPackage"):WaitForChild("RagdollSystem"))
+    local package = ReplicatedStorage:WaitForChild("RagdollSystemPackage", 2)
+    if package then
+        RagdollSystem = require(package:WaitForChild("RagdollSystem", 2))
+    end
 end)
 
 task.spawn(function()
@@ -282,7 +281,6 @@ task.spawn(function()
     end
 end)
 
--- [ INSTANT PROXIMITY PROMPT LOGIC ]
 promptLoop = ProximityPromptService.PromptShown:Connect(function(prompt)
     if instantPromptEnabled then
         pcall(function() prompt.HoldDuration = 0 end)
@@ -294,7 +292,6 @@ ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
     end
 end)
 
--- 🔥 [ ESP PLAYER REAL-TIME HEARTBEAT LOOP ]
 espHeartbeatLoop = RunService.Heartbeat:Connect(function()
     local cam = workspace.CurrentCamera
     local viewportSize = cam.ViewportSize
@@ -308,12 +305,10 @@ espHeartbeatLoop = RunService.Heartbeat:Connect(function()
             local hrpPos, onScreen = cam:WorldToViewportPoint(hrp.Position)
 
             if onScreen then
-                -- Menghitung ukuran box dinamis berdasarkan jarak player
                 local distance = (cam.CFrame.Position - hrp.Position).Magnitude
                 local boxHeight = math.clamp((1000 / distance) * 3.5, 10, viewportSize.Y)
                 local boxWidth = boxHeight * 0.6
 
-                -- Update Box Posisi & Dimensi
                 drawings.Box.Size = Vector2.new(boxWidth, boxHeight)
                 drawings.Box.Position = Vector2.new(hrpPos.X - boxWidth / 2, hrpPos.Y - boxHeight / 2)
                 drawings.Box.Visible = true
@@ -322,12 +317,10 @@ espHeartbeatLoop = RunService.Heartbeat:Connect(function()
                 drawings.BoxOutline.Position = drawings.Box.Position
                 drawings.BoxOutline.Visible = true
 
-                -- Update Name Tag (Posisi tepat di atas kepala box)
                 drawings.NameTag.Text = string.format("%s [%d HP]", player.Name, math.floor(hum.Health))
                 drawings.NameTag.Position = Vector2.new(hrpPos.X, hrpPos.Y - (boxHeight / 2) - 15)
                 drawings.NameTag.Visible = true
 
-                -- Update Tracer/Line (Dari bagian tengah-bawah layar ke kaki player)
                 if espLinesEnabled then
                     drawings.Tracer.From = Vector2.new(viewportSize.X / 2, viewportSize.Y)
                     drawings.Tracer.To = Vector2.new(hrpPos.X, hrpPos.Y + boxHeight / 2)
@@ -350,8 +343,6 @@ espHeartbeatLoop = RunService.Heartbeat:Connect(function()
     end
 end)
 
-
--- [ TABS UI IMPLEMENTATION ]
 local PresetTab = gui:tab{ Name = "Full Presets", Icon = "rbxassetid://6034996695" }
 for name, data in pairs(ANIMS) do
     PresetTab:button({
@@ -408,7 +399,6 @@ AddEmote("Hip Sway", "138316142522795")
 AddEmote("NYC Sturdy", "140333103929828")
 EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote then currentEmote:Stop() end StopAnim() end })
 
--- [ LOCAL TAB CONTROLS ]
 local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
 LocalTab:button({ Name = "🌐 Server Hop", Callback = ServerHop })
 LocalTab:slider({ Name = "🚀 Fly Speed (Unlimited)", Default = 50, Min = 10, Max = 5000, Callback = function(v) flySpeed = v end })
@@ -444,13 +434,11 @@ end })
 
 LocalTab:toggle({ Name = "⚡ Instant Fire Prompt", Callback = function(state) instantPromptEnabled = state end })
 
--- 🔥 NEW ESP TOGGLES IN LOCAL TAB
 LocalTab:toggle({ Name = "👁️ Enable Player ESP (Box)", Callback = function(state) espEnabled = state end })
 LocalTab:toggle({ Name = "📏 Enable ESP Lines (Tracers)", Callback = function(state) espLinesEnabled = state end })
 
 LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 5000, Callback = function(v) lastWalkSpeed = v end })
 
--- [ PLAYERS TAB ]
 local PlayerTab = gui:tab{ Name = "Players", Icon = "rbxassetid://6034996695" }
 local selectedPlayer
 local function GetPlayers() local t = {} for _,p in ipairs(Players:GetPlayers()) do if p ~= plr then table.insert(t,p.Name) end end return t end
