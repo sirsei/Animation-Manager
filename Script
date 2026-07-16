@@ -404,6 +404,15 @@ LocalTab:button({ Name = "🌐 Server Hop", Callback = ServerHop })
 LocalTab:slider({ Name = "🚀 Fly Speed (Unlimited)", Default = 50, Min = 10, Max = 5000, Callback = function(v) flySpeed = v end })
 LocalTab:toggle({ Name = "Fly (F) + Noclip", Callback = function(v) if v then StartFly() else StopFly() end end })
 
+LocalTab:button({ 
+    Name = "💥 Load Touch Fling", 
+    Callback = function() 
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/SCRIPTHUB-dev-god/exploit/refs/heads/main/fling/the-touch-fling.luau",true))()
+        end)
+    end 
+})
+
 local infJumpEnabled = false
 local jumpDebounce = false
 UIS.JumpRequest:Connect(function()
@@ -433,12 +442,11 @@ LocalTab:toggle({ Name = "🛡️ Anti Ragdoll", Callback = function(state)
 end })
 
 LocalTab:toggle({ Name = "⚡ Instant Fire Prompt", Callback = function(state) instantPromptEnabled = state end })
-
 LocalTab:toggle({ Name = "👁️ Enable Player ESP (Box)", Callback = function(state) espEnabled = state end })
 LocalTab:toggle({ Name = "📏 Enable ESP Lines (Tracers)", Callback = function(state) espLinesEnabled = state end })
-
 LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 5000, Callback = function(v) lastWalkSpeed = v end })
 
+-- Tab Players Modifikasi
 local PlayerTab = gui:tab{ Name = "Players", Icon = "rbxassetid://6034996695" }
 local selectedPlayer
 local function GetPlayers() local t = {} for _,p in ipairs(Players:GetPlayers()) do if p ~= plr then table.insert(t,p.Name) end end return t end
@@ -455,3 +463,13 @@ end})
 PlayerTab:button({ Name = "Stop Spectate", Callback = function() 
     if plr.Character then workspace.CurrentCamera.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid") end 
 end})
+
+-- Tombol Baru: Copy Player Appearance
+PlayerTab:button({
+    Name = "📋 Copy Player Appearance",
+    Callback = function()
+        pcall(function()
+            loadstring(game:HttpGet('https://raw.githubusercontent.com/Nearastro/Nearastro/refs/heads/main/00CopyAvaFE.lua'))()
+        end)
+    end
+})
