@@ -17,6 +17,12 @@ local gui = Library:create{
     Theme = successTheme and chosenTheme or nil
 }
 
+-- Target Event & Data Turbo Dig
+local DigEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("DigRequest")
+local ItemName = "Celestial Apex"
+local turboDigEnabled = false
+local turboDigLoop = nil
+
 local currentPose
 local currentEmote
 local flying = false
@@ -399,7 +405,94 @@ AddEmote("Hip Sway", "138316142522795")
 AddEmote("NYC Sturdy", "140333103929828")
 EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote then currentEmote:Stop() end StopAnim() end })
 
+-- [[ TAB LOCAL - SEPARATED CONTROLS (HOLD CLICK & PROMPT TRIGGER) ]]
 local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
+
+-- Target Events & Data
+local DigEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("DigRequest")
+local CrystalEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CrystalMineFX")
+local ItemName = "Celestial Apex"
+
+local turboDigEnabled = false
+local crystalMineEnabled = false
+local turboDigLoop = nil
+local promptCrystalConnection = nil
+
+-- 1. FUNGSI DIGGING (TAHAN KLIK KIRI)
+LocalTab:toggle({ 
+    Name = "🔥 Turbo Dig (Hold Left Click)", 
+    Callback = function(state) 
+        turboDigEnabled = state
+        
+        if turboDigLoop then 
+            turboDigLoop:Disconnect() 
+            turboDigLoop = nil
+        end
+        
+        if turboDigEnabled then
+            -- Register lokal untuk optimasi memori Luau
+            local fastEvent = DigEvent
+            local fastItem = ItemName
+            local fastMouse = plr:GetMouse()
+            local fastUis = UIS
+            local mouseLeft = Enum.UserInputType.MouseButton1
+            
+            turboDigLoop = RunService.Heartbeat:Connect(function()
+                -- Terus menembak secepat frame berjalan jika klik kiri ditahan
+                if fastUis:IsMouseButtonPressed(mouseLeft) then
+                    local targetHit = fastMouse.Hit
+                    if targetHit then
+                        fastEvent:FireServer(fastItem, targetHit.Position)
+                    end
+                end
+            end)
+        end
+    end 
+})
+
+-- 2. FUNGSI CRYSTAL FX (BURST INSTAN SAAT PROXIMITY PROMPT TER-FIRE)
+LocalTab:toggle({ 
+    Name = "💎 Crystal Mine FX (On Prompt Triggered)", 
+    Callback = function(state) 
+        crystalMineEnabled = state
+        
+        if promptCrystalConnection then 
+            promptCrystalConnection:Disconnect() 
+            promptCrystalConnection = nil 
+        end
+        
+        if crystalMineEnabled then
+            local fastEvent = CrystalEvent
+            local localPlayer = plr
+            
+            promptCrystalConnection = ProximityPromptService.PromptTriggered:Connect(function(prompt)
+                local promptParent = prompt.Parent
+                local character = localPlayer.Character
+                local hrp = character and character:FindFirstChild("HumanoidRootPart")
+                
+                if promptParent and promptParent:IsA("BasePart") and hrp then
+                    local distance = (hrp.Position - promptParent.Position).Magnitude
+                    
+                    -- Menggunakan perulangan instan (Burst) agar eksekusinya beruntun sangat cepat
+                    for i = 1, 25 do -- Ubah angka 25 jika ingin spam lebih banyak/sedikit dalam 1 hit
+                        local pseudoRandom = math.random(1000, 9999)
+                        
+                        firesignal(fastEvent.OnClientEvent, 
+                            "hit",
+                            promptParent,        
+                            distance,            
+                            localPlayer.UserId,  
+                            pseudoRandom,        
+                            pseudoRandom + 2800  
+                        )
+                    end
+                end
+            end)
+        end
+    end 
+})
+
+-- PENGATURAN LOCAL LAINNYA
 LocalTab:button({ Name = "🌐 Server Hop", Callback = ServerHop })
 LocalTab:slider({ Name = "🚀 Fly Speed (Unlimited)", Default = 50, Min = 10, Max = 5000, Callback = function(v) flySpeed = v end })
 LocalTab:toggle({ Name = "Fly (F) + Noclip", Callback = function(v) if v then StartFly() else StopFly() end end })
@@ -445,7 +538,6 @@ LocalTab:toggle({ Name = "⚡ Instant Fire Prompt", Callback = function(state) i
 LocalTab:toggle({ Name = "👁️ Enable Player ESP (Box)", Callback = function(state) espEnabled = state end })
 LocalTab:toggle({ Name = "📏 Enable ESP Lines (Tracers)", Callback = function(state) espLinesEnabled = state end })
 LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 5000, Callback = function(v) lastWalkSpeed = v end })
-
 -- Tab Players Modifikasi
 local PlayerTab = gui:tab{ Name = "Players", Icon = "rbxassetid://6034996695" }
 local selectedPlayer
