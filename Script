@@ -25,7 +25,7 @@ local crystalMineEnabled = false
 local turboDigLoop = nil
 local promptCrystalConnection = nil
 
--- State Fitur: Voltite Highlight Only
+-- State Fitur: Boulders Highlight Only
 local voltiteHighlightEnabled = false
 local voltiteHighlightCache = {}
 local voltiteRenderLoop = nil
@@ -423,9 +423,9 @@ end
 -- [[ TAB LOCAL ]]
 local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
 
--- FITUR HIGHLIGHT ONLY (BERSIH DENGAN FULL PROTECTION PCALL)
+-- TOGGLE MENGIKUTI PATH BARU
 LocalTab:toggle({ 
-    Name = "🔮 Voltite Highlight (Chams Only)", 
+    Name = "🔮 Boulders Highlight (Chams Only)", 
     Callback = function(state) 
         voltiteHighlightEnabled = state
         if not state then
@@ -434,30 +434,30 @@ LocalTab:toggle({
     end 
 })
 
--- CORE RENDER LOOP UNTUK DYNAMIC DETECTIONS (AMANKAN DENGAN PCALL SEPERTI RAGDOLL)
+-- CORE RENDER LOOP UNTUK DYNAMIC DETECTIONS (PATH DIUBAH KE BOULDERS LANGSUNG + PCALL SAFETIES)
 voltiteRenderLoop = RunService.Heartbeat:Connect(function()
     if not voltiteHighlightEnabled then return end
     
     local success, err = pcall(function()
         local targetPath = workspace:FindFirstChild("MountainDecorations")
         targetPath = targetPath and targetPath:FindFirstChild("Boulders")
-        targetPath = targetPath and targetPath:FindFirstChild("Voltite")
         
         if not targetPath then 
             ClearVoltiteHighlight()
             return 
         end
         
-        local allVoltites = targetPath:GetChildren()
+        -- Membaca langsung isi yang berada di dalam folder Boulders
+        local allBoulders = targetPath:GetChildren()
         local activeObjects = {}
         
-        for _, obj in ipairs(allVoltites) do
+        for _, obj in ipairs(allBoulders) do
             if obj:IsA("Model") or obj:IsA("BasePart") then
                 activeObjects[obj] = true
                 
                 if not voltiteHighlightCache[obj] then
                     local hl = Instance.new("Highlight")
-                    hl.Name = "VoltiteHighlight"
+                    hl.Name = "BouldersHighlight"
                     hl.FillColor = Color3.fromRGB(0, 255, 255)  -- Cyan Neon
                     hl.FillTransparency = 0.4
                     hl.OutlineColor = Color3.fromRGB(255, 255, 255) -- Putih
@@ -469,7 +469,7 @@ voltiteRenderLoop = RunService.Heartbeat:Connect(function()
             end
         end
         
-        -- Auto cleanup object hancur saat di-mine
+        -- Auto cleanup object hancur saat di-mine atau hilang
         for obj, hl in pairs(voltiteHighlightCache) do
             if not activeObjects[obj] then
                 pcall(function() hl:Destroy() end)
@@ -478,7 +478,6 @@ voltiteRenderLoop = RunService.Heartbeat:Connect(function()
         end
     end)
     
-    -- Jika di dalam pcall terindikasi error, clear cache agar aman
     if not success then
         ClearVoltiteHighlight()
     end
