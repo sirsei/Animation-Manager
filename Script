@@ -17,9 +17,11 @@ local gui = Library:create{
     Theme = successTheme and chosenTheme or nil
 }
 
--- Target Event & Data Turbo Dig
-local DigEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("DigRequest")
-local CrystalEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CrystalMineFX")
+-- Target Event & Data Turbo Dig (FIXED: Menggunakan timeout agar tidak stuck di game lain)
+local Remotes = ReplicatedStorage:WaitForChild("Remotes", 2)
+local DigEvent = Remotes and Remotes:WaitForChild("DigRequest", 2) or nil
+local CrystalEvent = Remotes and Remotes:WaitForChild("CrystalMineFX", 2) or nil
+
 local turboDigEnabled = false
 local crystalMineEnabled = false
 local turboDigLoop = nil
@@ -434,7 +436,7 @@ LocalTab:toggle({
     end 
 })
 
--- CORE RENDER LOOP UNTUK DYNAMIC DETECTIONS (PATH DIUBAH KE BOULDERS LANGSUNG + PCALL SAFETIES)
+-- CORE RENDER LOOP UNTUK DYNAMIC DETECTIONS
 voltiteRenderLoop = RunService.Heartbeat:Connect(function()
     if not voltiteHighlightEnabled then return end
     
@@ -447,7 +449,6 @@ voltiteRenderLoop = RunService.Heartbeat:Connect(function()
             return 
         end
         
-        -- Membaca langsung isi yang berada di dalam folder Boulders
         local allBoulders = targetPath:GetChildren()
         local activeObjects = {}
         
@@ -469,7 +470,6 @@ voltiteRenderLoop = RunService.Heartbeat:Connect(function()
             end
         end
         
-        -- Auto cleanup object hancur saat di-mine atau hilang
         for obj, hl in pairs(voltiteHighlightCache) do
             if not activeObjects[obj] then
                 pcall(function() hl:Destroy() end)
@@ -483,7 +483,7 @@ voltiteRenderLoop = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- 1. FUNGSI DIGGING (TAHAN KLIK KIRI + DYNAMIC TOOL DETECT)
+-- 1. FUNGSI DIGGING (DENGAN BEBAN SAFETY CEK)
 LocalTab:toggle({ 
     Name = "🔥 Turbo Dig (Hold Left Click)", 
     Callback = function(state) 
@@ -494,7 +494,7 @@ LocalTab:toggle({
             turboDigLoop = nil
         end
         
-        if turboDigEnabled then
+        if turboDigEnabled and DigEvent then
             local fastEvent = DigEvent
             local fastMouse = plr:GetMouse()
             local fastUis = UIS
@@ -517,7 +517,7 @@ LocalTab:toggle({
     end 
 })
 
--- 2. FUNGSI CRYSTAL FX (BURST INSTAN SAAT PROXIMITY PROMPT TER-FIRE)
+-- 2. FUNGSI CRYSTAL FX (DENGAN BEBAN SAFETY CEK)
 LocalTab:toggle({ 
     Name = "💎 Crystal Mine FX (On Prompt Triggered)", 
     Callback = function(state) 
@@ -528,7 +528,7 @@ LocalTab:toggle({
             promptCrystalConnection = nil 
         end
         
-        if crystalMineEnabled then
+        if crystalMineEnabled and CrystalEvent then
             local fastEvent = CrystalEvent
             local localPlayer = plr
             
