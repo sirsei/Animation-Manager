@@ -19,9 +19,16 @@ local gui = Library:create{
 
 -- Target Event & Data Turbo Dig
 local DigEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("DigRequest")
-local ItemName = "Celestial Apex"
+local CrystalEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CrystalMineFX")
 local turboDigEnabled = false
+local crystalMineEnabled = false
 local turboDigLoop = nil
+local promptCrystalConnection = nil
+
+-- State Fitur: Voltite Highlight Only
+local voltiteHighlightEnabled = false
+local voltiteHighlightCache = {}
+local voltiteRenderLoop = nil
 
 local currentPose
 local currentEmote
@@ -405,20 +412,79 @@ AddEmote("Hip Sway", "138316142522795")
 AddEmote("NYC Sturdy", "140333103929828")
 EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote then currentEmote:Stop() end StopAnim() end })
 
--- [[ TAB LOCAL - SEPARATED CONTROLS (HOLD CLICK & PROMPT TRIGGER) ]]
+-- FUNGSI CLEANUP UNTUK HIGHLIGHT
+local function ClearVoltiteHighlight()
+    for obj, hl in pairs(voltiteHighlightCache) do
+        pcall(function() hl:Destroy() end)
+    end
+    table.clear(voltiteHighlightCache)
+end
+
+-- [[ TAB LOCAL ]]
 local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
 
--- Target Events & Data
-local DigEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("DigRequest")
-local CrystalEvent = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CrystalMineFX")
-local ItemName = "Celestial Apex"
+-- FITUR HIGHLIGHT ONLY (BERSIH DENGAN FULL PROTECTION PCALL)
+LocalTab:toggle({ 
+    Name = "🔮 Voltite Highlight (Chams Only)", 
+    Callback = function(state) 
+        voltiteHighlightEnabled = state
+        if not state then
+            ClearVoltiteHighlight()
+        end
+    end 
+})
 
-local turboDigEnabled = false
-local crystalMineEnabled = false
-local turboDigLoop = nil
-local promptCrystalConnection = nil
+-- CORE RENDER LOOP UNTUK DYNAMIC DETECTIONS (AMANKAN DENGAN PCALL SEPERTI RAGDOLL)
+voltiteRenderLoop = RunService.Heartbeat:Connect(function()
+    if not voltiteHighlightEnabled then return end
+    
+    local success, err = pcall(function()
+        local targetPath = workspace:FindFirstChild("MountainDecorations")
+        targetPath = targetPath and targetPath:FindFirstChild("Boulders")
+        targetPath = targetPath and targetPath:FindFirstChild("Voltite")
+        
+        if not targetPath then 
+            ClearVoltiteHighlight()
+            return 
+        end
+        
+        local allVoltites = targetPath:GetChildren()
+        local activeObjects = {}
+        
+        for _, obj in ipairs(allVoltites) do
+            if obj:IsA("Model") or obj:IsA("BasePart") then
+                activeObjects[obj] = true
+                
+                if not voltiteHighlightCache[obj] then
+                    local hl = Instance.new("Highlight")
+                    hl.Name = "VoltiteHighlight"
+                    hl.FillColor = Color3.fromRGB(0, 255, 255)  -- Cyan Neon
+                    hl.FillTransparency = 0.4
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 255) -- Putih
+                    hl.OutlineTransparency = 0
+                    hl.Adornee = obj
+                    hl.Parent = obj
+                    voltiteHighlightCache[obj] = hl
+                end
+            end
+        end
+        
+        -- Auto cleanup object hancur saat di-mine
+        for obj, hl in pairs(voltiteHighlightCache) do
+            if not activeObjects[obj] then
+                pcall(function() hl:Destroy() end)
+                voltiteHighlightCache[obj] = nil
+            end
+        end
+    end)
+    
+    -- Jika di dalam pcall terindikasi error, clear cache agar aman
+    if not success then
+        ClearVoltiteHighlight()
+    end
+end)
 
--- 1. FUNGSI DIGGING (TAHAN KLIK KIRI)
+-- 1. FUNGSI DIGGING (TAHAN KLIK KIRI + DYNAMIC TOOL DETECT)
 LocalTab:toggle({ 
     Name = "🔥 Turbo Dig (Hold Left Click)", 
     Callback = function(state) 
@@ -430,19 +496,21 @@ LocalTab:toggle({
         end
         
         if turboDigEnabled then
-            -- Register lokal untuk optimasi memori Luau
             local fastEvent = DigEvent
-            local fastItem = ItemName
             local fastMouse = plr:GetMouse()
             local fastUis = UIS
+            local localPlayer = plr
             local mouseLeft = Enum.UserInputType.MouseButton1
             
             turboDigLoop = RunService.Heartbeat:Connect(function()
-                -- Terus menembak secepat frame berjalan jika klik kiri ditahan
                 if fastUis:IsMouseButtonPressed(mouseLeft) then
                     local targetHit = fastMouse.Hit
                     if targetHit then
-                        fastEvent:FireServer(fastItem, targetHit.Position)
+                        local character = localPlayer.Character
+                        local currentTool = character and character:FindFirstChildOfClass("Tool")
+                        local dynamicItemName = currentTool and currentTool.Name or "Celestial Apex" 
+                        
+                        fastEvent:FireServer(dynamicItemName, targetHit.Position)
                     end
                 end
             end)
@@ -473,8 +541,7 @@ LocalTab:toggle({
                 if promptParent and promptParent:IsA("BasePart") and hrp then
                     local distance = (hrp.Position - promptParent.Position).Magnitude
                     
-                    -- Menggunakan perulangan instan (Burst) agar eksekusinya beruntun sangat cepat
-                    for i = 1, 25 do -- Ubah angka 25 jika ingin spam lebih banyak/sedikit dalam 1 hit
+                    for i = 1, 25 do
                         local pseudoRandom = math.random(1000, 9999)
                         
                         firesignal(fastEvent.OnClientEvent, 
@@ -538,6 +605,7 @@ LocalTab:toggle({ Name = "⚡ Instant Fire Prompt", Callback = function(state) i
 LocalTab:toggle({ Name = "👁️ Enable Player ESP (Box)", Callback = function(state) espEnabled = state end })
 LocalTab:toggle({ Name = "📏 Enable ESP Lines (Tracers)", Callback = function(state) espLinesEnabled = state end })
 LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 5000, Callback = function(v) lastWalkSpeed = v end })
+
 -- Tab Players Modifikasi
 local PlayerTab = gui:tab{ Name = "Players", Icon = "rbxassetid://6034996695" }
 local selectedPlayer
@@ -556,7 +624,7 @@ PlayerTab:button({ Name = "Stop Spectate", Callback = function()
     if plr.Character then workspace.CurrentCamera.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid") end 
 end})
 
--- Tombol Baru: Copy Player Appearance
+-- Tombol: Copy Player Appearance
 PlayerTab:button({
     Name = "📋 Copy Player Appearance",
     Callback = function()
