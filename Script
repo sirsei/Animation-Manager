@@ -17,7 +17,6 @@ local gui = Library:create{
     Theme = successTheme and chosenTheme or nil
 }
 
--- Target Event & Data Turbo Dig (FIXED: Menggunakan timeout agar tidak stuck di game lain)
 local Remotes = ReplicatedStorage:WaitForChild("Remotes", 2)
 local DigEvent = Remotes and Remotes:WaitForChild("DigRequest", 2) or nil
 local CrystalEvent = Remotes and Remotes:WaitForChild("CrystalMineFX", 2) or nil
@@ -27,7 +26,6 @@ local crystalMineEnabled = false
 local turboDigLoop = nil
 local promptCrystalConnection = nil
 
--- State Fitur: Boulders Highlight Only
 local voltiteHighlightEnabled = false
 local voltiteHighlightCache = {}
 local voltiteRenderLoop = nil
@@ -43,6 +41,10 @@ local instantPromptEnabled = false
 local espEnabled = false 
 local espLinesEnabled = false 
 local bv, gy, flyLoop, noclipLoop, walkSpeedLoop, promptLoop, espHeartbeatLoop
+
+local digMultiplier = 2
+local autoAimBoulder = false
+local autoDigNoClick = false
 
 local espCache = {}
 
@@ -414,7 +416,6 @@ AddEmote("Hip Sway", "138316142522795")
 AddEmote("NYC Sturdy", "140333103929828")
 EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote then currentEmote:Stop() end StopAnim() end })
 
--- FUNGSI CLEANUP UNTUK HIGHLIGHT
 local function ClearVoltiteHighlight()
     for obj, hl in pairs(voltiteHighlightCache) do
         pcall(function() hl:Destroy() end)
@@ -422,10 +423,8 @@ local function ClearVoltiteHighlight()
     table.clear(voltiteHighlightCache)
 end
 
--- [[ TAB LOCAL ]]
 local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
 
--- TOGGLE MENGIKUTI PATH BARU
 LocalTab:toggle({ 
     Name = "🔮 Boulders Highlight (Chams Only)", 
     Callback = function(state) 
@@ -436,7 +435,6 @@ LocalTab:toggle({
     end 
 })
 
--- CORE RENDER LOOP UNTUK DYNAMIC DETECTIONS
 voltiteRenderLoop = RunService.Heartbeat:Connect(function()
     if not voltiteHighlightEnabled then return end
     
@@ -459,9 +457,9 @@ voltiteRenderLoop = RunService.Heartbeat:Connect(function()
                 if not voltiteHighlightCache[obj] then
                     local hl = Instance.new("Highlight")
                     hl.Name = "BouldersHighlight"
-                    hl.FillColor = Color3.fromRGB(0, 255, 255)  -- Cyan Neon
+                    hl.FillColor = Color3.fromRGB(0, 255, 255)
                     hl.FillTransparency = 0.4
-                    hl.OutlineColor = Color3.fromRGB(255, 255, 255) -- Putih
+                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
                     hl.OutlineTransparency = 0
                     hl.Adornee = obj
                     hl.Parent = obj
@@ -483,9 +481,51 @@ voltiteRenderLoop = RunService.Heartbeat:Connect(function()
     end
 end)
 
--- 1. FUNGSI DIGGING (DENGAN BEBAN SAFETY CEK)
+local function GetNearestBoulderPosition()
+    local targetPath = workspace:FindFirstChild("MountainDecorations")
+    targetPath = targetPath and targetPath:FindFirstChild("Boulders")
+    if not targetPath then return nil end
+
+    local char = plr.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local nearestPos = nil
+    local shortestDist = 50
+
+    for _, obj in ipairs(targetPath:GetChildren()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position) or obj.Position
+            local dist = (hrp.Position - pos).Magnitude
+            if dist < shortestDist then
+                shortestDist = dist
+                nearestPos = pos
+            end
+        end
+    end
+    return nearestPos
+end
+
+LocalTab:slider({ 
+    Name = "⚡ Dig Speed Multiplier", 
+    Default = 2, 
+    Min = 1, 
+    Max = 10, 
+    Callback = function(v) digMultiplier = v end 
+})
+
 LocalTab:toggle({ 
-    Name = "🔥 Turbo Dig (Hold Left Click)", 
+    Name = "🧲 Auto-Aim Nearest Boulder", 
+    Callback = function(state) autoAimBoulder = state end 
+})
+
+LocalTab:toggle({ 
+    Name = "🤖 Auto Dig (No Click Required)", 
+    Callback = function(state) autoDigNoClick = state end 
+})
+
+LocalTab:toggle({ 
+    Name = "🔥 Turbo Dig (Master Switch)", 
     Callback = function(state) 
         turboDigEnabled = state
         
@@ -502,14 +542,27 @@ LocalTab:toggle({
             local mouseLeft = Enum.UserInputType.MouseButton1
             
             turboDigLoop = RunService.Heartbeat:Connect(function()
-                if fastUis:IsMouseButtonPressed(mouseLeft) then
-                    local targetHit = fastMouse.Hit
-                    if targetHit then
-                        local character = localPlayer.Character
-                        local currentTool = character and character:FindFirstChildOfClass("Tool")
-                        local dynamicItemName = currentTool and currentTool.Name or "Celestial Apex" 
-                        
-                        fastEvent:FireServer(dynamicItemName, targetHit.Position)
+                if autoDigNoClick or fastUis:IsMouseButtonPressed(mouseLeft) then
+                    local character = localPlayer.Character
+                    local currentTool = character and character:FindFirstChildOfClass("Tool")
+                    
+                    if autoDigNoClick and not currentTool then return end
+                    
+                    local dynamicItemName = currentTool and currentTool.Name or "Celestial Apex" 
+                    local targetPos = nil
+                    
+                    if autoAimBoulder then
+                        targetPos = GetNearestBoulderPosition()
+                    end
+                    
+                    if not targetPos and fastMouse.Hit then
+                        targetPos = fastMouse.Hit.Position
+                    end
+
+                    if targetPos then
+                        for i = 1, digMultiplier do
+                            fastEvent:FireServer(dynamicItemName, targetPos)
+                        end
                     end
                 end
             end)
@@ -517,7 +570,6 @@ LocalTab:toggle({
     end 
 })
 
--- 2. FUNGSI CRYSTAL FX (DENGAN BEBAN SAFETY CEK)
 LocalTab:toggle({ 
     Name = "💎 Crystal Mine FX (On Prompt Triggered)", 
     Callback = function(state) 
@@ -558,7 +610,6 @@ LocalTab:toggle({
     end 
 })
 
--- PENGATURAN LOCAL LAINNYA
 LocalTab:button({ Name = "🌐 Server Hop", Callback = ServerHop })
 LocalTab:slider({ Name = "🚀 Fly Speed (Unlimited)", Default = 50, Min = 10, Max = 5000, Callback = function(v) flySpeed = v end })
 LocalTab:toggle({ Name = "Fly (F) + Noclip", Callback = function(v) if v then StartFly() else StopFly() end end })
@@ -605,7 +656,6 @@ LocalTab:toggle({ Name = "👁️ Enable Player ESP (Box)", Callback = function(
 LocalTab:toggle({ Name = "📏 Enable ESP Lines (Tracers)", Callback = function(state) espLinesEnabled = state end })
 LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 5000, Callback = function(v) lastWalkSpeed = v end })
 
--- Tab Players Modifikasi
 local PlayerTab = gui:tab{ Name = "Players", Icon = "rbxassetid://6034996695" }
 local selectedPlayer
 local function GetPlayers() local t = {} for _,p in ipairs(Players:GetPlayers()) do if p ~= plr then table.insert(t,p.Name) end end return t end
@@ -623,7 +673,6 @@ PlayerTab:button({ Name = "Stop Spectate", Callback = function()
     if plr.Character then workspace.CurrentCamera.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid") end 
 end})
 
--- Tombol: Copy Player Appearance
 PlayerTab:button({
     Name = "📋 Copy Player Appearance",
     Callback = function()
