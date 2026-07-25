@@ -37,14 +37,19 @@ local noclip = false
 local flySpeed = 50
 local lastWalkSpeed = 16
 local antiRagdollEnabled = false
-local instantPromptEnabled = false
 local espEnabled = false 
 local espLinesEnabled = false 
-local bv, gy, flyLoop, noclipLoop, walkSpeedLoop, promptLoop, espHeartbeatLoop
+local bv, gy, flyLoop, noclipLoop, walkSpeedLoop, espHeartbeatLoop
 
 local digMultiplier = 2
 local autoAimBoulder = false
 local autoDigNoClick = false
+
+-- Variabel Fitur ProximityPrompt
+local instantPromptEnabled = false
+local autoCollectPromptEnabled = false
+local autoCollectLoop = nil
+local promptCache = {}
 
 local espCache = {}
 
@@ -298,16 +303,92 @@ task.spawn(function()
     end
 end)
 
-promptLoop = ProximityPromptService.PromptShown:Connect(function(prompt)
+-- ================================================================= --
+-- PROXIMITY PROMPT SYSTEM (CACHE & TRIGGER LOGIC)
+-- ================================================================= --
+for _, obj in ipairs(workspace:GetDescendants()) do
+    if obj:IsA("ProximityPrompt") then
+        table.insert(promptCache, obj)
+    end
+end
+
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("ProximityPrompt") then
+        table.insert(promptCache, obj)
+    end
+end)
+
+workspace.DescendantRemoving:Connect(function(obj)
+    if obj:IsA("ProximityPrompt") then
+        for i, prompt in ipairs(promptCache) do
+            if prompt == obj then
+                table.remove(promptCache, i)
+                break
+            end
+        end
+    end
+end)
+
+local function GetNearestPrompt()
+    local char = plr.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local nearestPrompt = nil
+    local shortestDist = math.huge
+
+    for _, prompt in ipairs(promptCache) do
+        if prompt.Enabled and prompt.Parent then
+            local parent = prompt.Parent
+            local pos = nil
+            
+            if parent:IsA("BasePart") then
+                pos = parent.Position
+            elseif parent:IsA("Model") then
+                pos = parent.PrimaryPart and parent.PrimaryPart.Position or parent:GetPivot().Position
+            elseif parent:IsA("Attachment") then
+                pos = parent.WorldPosition
+            end
+
+            if pos then
+                local dist = (hrp.Position - pos).Magnitude
+                if dist <= prompt.MaxActivationDistance and dist < shortestDist then
+                    shortestDist = dist
+                    nearestPrompt = prompt
+                end
+            end
+        end
+    end
+    return nearestPrompt
+end
+
+local function TriggerPrompt(prompt)
+    if not prompt then return end
+    pcall(function()
+        prompt.HoldDuration = 0
+        if fireproximityprompt then
+            fireproximityprompt(prompt)
+        else
+            prompt:InputHoldBegin()
+            task.wait()
+            prompt:InputHoldEnd()
+        end
+    end)
+end
+
+-- Event Listener untuk Instant Fire Prompt (Manual Hit)
+ProximityPromptService.PromptShown:Connect(function(prompt)
     if instantPromptEnabled then
         pcall(function() prompt.HoldDuration = 0 end)
     end
 end)
+
 ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
     if instantPromptEnabled then
-        pcall(function() prompt:InputHoldEnd() end)
+        TriggerPrompt(prompt)
     end
 end)
+-- ================================================================= --
 
 espHeartbeatLoop = RunService.Heartbeat:Connect(function()
     local cam = workspace.CurrentCamera
@@ -651,7 +732,36 @@ LocalTab:toggle({ Name = "🛡️ Anti Ragdoll", Callback = function(state)
     end
 end })
 
-LocalTab:toggle({ Name = "⚡ Instant Fire Prompt", Callback = function(state) instantPromptEnabled = state end })
+-- Tombol 1: Instant Fire Prompt (Manual Hit Instant)
+LocalTab:toggle({ 
+    Name = "⚡ Instant Fire Prompt", 
+    Callback = function(state) 
+        instantPromptEnabled = state 
+    end 
+})
+
+-- Tombol 2: Auto Collect Nearest Prompt (Otomatis Ambil Terdekat)
+LocalTab:toggle({ 
+    Name = "🤖 Auto Collect Nearest Prompt", 
+    Callback = function(state) 
+        autoCollectPromptEnabled = state
+        
+        if autoCollectLoop then
+            autoCollectLoop:Disconnect()
+            autoCollectLoop = nil
+        end
+        
+        if autoCollectPromptEnabled then
+            autoCollectLoop = RunService.Heartbeat:Connect(function()
+                local nearest = GetNearestPrompt()
+                if nearest then
+                    TriggerPrompt(nearest)
+                end
+            end)
+        end
+    end 
+})
+
 LocalTab:toggle({ Name = "👁️ Enable Player ESP (Box)", Callback = function(state) espEnabled = state end })
 LocalTab:toggle({ Name = "📏 Enable ESP Lines (Tracers)", Callback = function(state) espLinesEnabled = state end })
 LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 5000, Callback = function(v) lastWalkSpeed = v end })
