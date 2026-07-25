@@ -497,6 +497,9 @@ AddEmote("Hip Sway", "138316142522795")
 AddEmote("NYC Sturdy", "140333103929828")
 EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote then currentEmote:Stop() end StopAnim() end })
 
+--------------------------------------------------------------------------------
+-- PENGATURAN ESP & FORCE TRANSPARENCY BOULDERS (SISTEM REVISED)
+--------------------------------------------------------------------------------
 local function ClearVoltiteHighlight()
     for obj, hl in pairs(voltiteHighlightCache) do
         pcall(function() hl:Destroy() end)
@@ -504,61 +507,65 @@ local function ClearVoltiteHighlight()
     table.clear(voltiteHighlightCache)
 end
 
+local function applyBoulderESP(boulder)
+    if not boulder:IsA("Model") then return end
+
+    -- 1. Paksa seluruh MeshPart / BasePart agar Transparansi = 0
+    for _, child in ipairs(boulder:GetDescendants()) do
+        if child:IsA("BasePart") then
+            child.Transparency = 0
+            
+            -- Lock agar tidak bisa diubah kembali jadi transparan oleh game
+            child:GetPropertyChangedSignal("Transparency"):Connect(function()
+                if child.Transparency > 0 then
+                    child.Transparency = 0
+                end
+            end)
+        end
+    end
+
+    -- 2. Pasang ESP Highlight warna Hijau Neon
+    local highlight = voltiteHighlightCache[boulder] or boulder:FindFirstChild("BoulderESP")
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "BoulderESP"
+        highlight.FillColor = Color3.fromRGB(0, 255, 128) -- Hijau Neon
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255) -- Outline Putih
+        highlight.FillTransparency = 0.4
+        highlight.OutlineTransparency = 0
+        highlight.Adornee = boulder
+        highlight.Parent = boulder
+        voltiteHighlightCache[boulder] = highlight
+    end
+    highlight.Enabled = voltiteHighlightEnabled
+end
+
 local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
 
 LocalTab:toggle({ 
-    Name = "🔮 Boulders Highlight (Chams Only)", 
+    Name = "🔮 Boulders Highlight (Green ESP)", 
     Callback = function(state) 
         voltiteHighlightEnabled = state
-        if not state then
-            ClearVoltiteHighlight()
+        
+        for obj, hl in pairs(voltiteHighlightCache) do
+            if hl then hl.Enabled = state end
         end
     end 
 })
 
-voltiteRenderLoop = RunService.Heartbeat:Connect(function()
-    if not voltiteHighlightEnabled then return end
+-- Event listener & Inisialisasi awal Boulders
+task.spawn(function()
+    local targetPath = workspace:WaitForChild("MountainDecorations", 10)
+    targetPath = targetPath and targetPath:WaitForChild("Boulders", 10)
     
-    local success, err = pcall(function()
-        local targetPath = workspace:FindFirstChild("MountainDecorations")
-        targetPath = targetPath and targetPath:FindFirstChild("Boulders")
-        
-        if not targetPath then 
-            ClearVoltiteHighlight()
-            return 
+    if targetPath then
+        for _, child in ipairs(targetPath:GetChildren()) do
+            applyBoulderESP(child)
         end
         
-        local allBoulders = targetPath:GetChildren()
-        local activeObjects = {}
-        
-        for _, obj in ipairs(allBoulders) do
-            if obj:IsA("Model") or obj:IsA("BasePart") then
-                activeObjects[obj] = true
-                
-                if not voltiteHighlightCache[obj] then
-                    local hl = Instance.new("Highlight")
-                    hl.Name = "BouldersHighlight"
-                    hl.FillColor = Color3.fromRGB(0, 255, 255)
-                    hl.FillTransparency = 0.4
-                    hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-                    hl.OutlineTransparency = 0
-                    hl.Adornee = obj
-                    hl.Parent = obj
-                    voltiteHighlightCache[obj] = hl
-                end
-            end
-        end
-        
-        for obj, hl in pairs(voltiteHighlightCache) do
-            if not activeObjects[obj] then
-                pcall(function() hl:Destroy() end)
-                voltiteHighlightCache[obj] = nil
-            end
-        end
-    end)
-    
-    if not success then
-        ClearVoltiteHighlight()
+        targetPath.ChildAdded:Connect(function(child)
+            applyBoulderESP(child)
+        end)
     end
 end)
 
