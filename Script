@@ -1,369 +1,463 @@
 local Players = game:GetService("Players")
-local plr = Players.LocalPlayer
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ProximityPromptService = game:GetService("ProximityPromptService")
+local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
 
-local Library = loadstring(game:HttpGet(
-    "https://raw.githubusercontent.com/deeeity/mercury-lib/master/src.lua"
-))()
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
-local successTheme, chosenTheme = pcall(function() return Library.Themes.Serika end)
+---------------------------------------------------------
+-- AUTO EXECUTE / QUEUE ON TELEPORT
+---------------------------------------------------------
+local queueOnTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
+if queueOnTeleport then
+    queueOnTeleport([[
+        repeat task.wait() until game:IsLoaded()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/..."))()
+    ]])
+end
 
-local gui = Library:create{
-    Theme = successTheme and chosenTheme or nil
-}
+---------------------------------------------------------
+-- KONFIGURASI TWEEN & OTOMASI
+---------------------------------------------------------
+local TWEEN_SPEED = 100
+local BOMB_EXPLODE_DELAY = 3.2
+local COLLECT_RADIUS = 25
+local MAX_COLLECT_TIMEOUT = 12
 
+-- Folder Target di Workspace
+local targetPath = workspace:WaitForChild("MountainDecorations", 10)
+local bouldersFolder = targetPath and targetPath:WaitForChild("Boulders", 10)
+
+-- Remote Events untuk Dig
 local Remotes = ReplicatedStorage:WaitForChild("Remotes", 2)
 local DigEvent = Remotes and Remotes:WaitForChild("DigRequest", 2) or nil
-local CrystalEvent = Remotes and Remotes:WaitForChild("CrystalMineFX", 2) or nil
 
-local turboDigEnabled = false
-local crystalMineEnabled = false
-local turboDigLoop = nil
-local promptCrystalConnection = nil
+-- Switch Status Kontrol & Selection
+local isDiggingActive = false
+local isCollectActive = false
+local isSequenceRunning = false
+local currentTargetModel = nil
 
-local voltiteHighlightEnabled = false
-local voltiteHighlightCache = {}
-local voltiteRenderLoop = nil
+local selectedMiningTarget = "All"
+local selectedESPTarget = "All"
 
-local currentPose
-local currentEmote
-local flying = false
-local noclip = false
-local flySpeed = 50
-local lastWalkSpeed = 16
-local antiRagdollEnabled = false
-local espEnabled = false 
-local espLinesEnabled = false 
-local bv, gy, flyLoop, noclipLoop, walkSpeedLoop, espHeartbeatLoop
+---------------------------------------------------------
+-- DYNAMIC NAME SCANNED FROM WORKSPACE
+---------------------------------------------------------
+local function GetBoulderNames()
+    local names = {}
+    local hash = {}
 
-local digMultiplier = 2
-local autoAimBoulder = false
-local autoDigNoClick = false
-
--- Variabel Fitur ProximityPrompt
-local instantPromptEnabled = false
-local autoCollectPromptEnabled = false
-local autoCollectLoop = nil
-local promptCache = {}
-
-local espCache = {}
-
-local function CreateESP(player)
-    if espCache[player] then return end
-    
-    local boxOutline = Drawing.new("Square")
-    boxOutline.Visible = false
-    boxOutline.Color = Color3.fromRGB(0, 0, 0)
-    boxOutline.Thickness = 3
-    boxOutline.Transparency = 0.5
-    boxOutline.Filled = false
-
-    local box = Drawing.new("Square")
-    box.Visible = false
-    box.Color = Color3.fromRGB(255, 215, 0) 
-    box.Thickness = 1
-    box.Filled = false
-
-    local nameTag = Drawing.new("Text")
-    nameTag.Visible = false
-    nameTag.Color = Color3.fromRGB(255, 255, 255)
-    nameTag.Size = 13
-    nameTag.Center = true
-    nameTag.Outline = true
-
-    local tracerLine = Drawing.new("Line")
-    tracerLine.Visible = false
-    tracerLine.Color = Color3.fromRGB(0, 191, 255) 
-    tracerLine.Thickness = 1
-    tracerLine.Transparency = 0.7
-
-    espCache[player] = {
-        BoxOutline = boxOutline,
-        Box = box,
-        NameTag = nameTag,
-        Tracer = tracerLine
-    }
-end
-
-local function RemoveESP(player)
-    if espCache[player] then
-        for _, drawing in pairs(espCache[player]) do
-            drawing.Visible = false
-            drawing:Remove()
-        end
-        espCache[player] = nil
-    end
-end
-
-for _, p in ipairs(Players:GetPlayers()) do
-    if p ~= plr then CreateESP(p) end
-end
-Players.PlayerAdded:Connect(CreateESP)
-Players.PlayerRemoving:Connect(RemoveESP)
-
-local function StopAnim()
-    local char = plr.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    for _,track in ipairs(hum:GetPlayingAnimationTracks()) do
-        pcall(function() track:Stop() end)
-    end
-end
-
-local function PlayAnim(id, store)
-    StopAnim()
-    if store and store.value then
-        pcall(function() store.value:Stop() end)
-    end
-    local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    local anim = Instance.new("Animation")
-    anim.AnimationId = id
-    local track = hum:LoadAnimation(anim)
-    track:Play()
-    if store then store.value = track end
-end
-
-local function norm(id)
-    if not id then return "" end
-    id = tostring(id)
-    if id:match("rbxassetid://") then return id end
-    local n = id:match("%d+")
-    return n and ("rbxassetid://"..n) or id
-end
-
-local function ApplySingle(category, animID)
-    local char = plr.Character
-    if not char then return end
-    local Animate = char:FindFirstChild("Animate")
-    if not Animate then return end
-    Animate.Disabled = true
-    StopAnim()
-    if category == "idle" then
-        Animate.idle.Animation1.AnimationId = norm(animID.idle1)
-        Animate.idle.Animation2.AnimationId = norm(animID.idle2)
-    elseif category == "swim" then
-        if Animate:FindFirstChild("swim") then Animate.swim.SwimAnim.AnimationId = norm(animID.swim) end
-        if Animate:FindFirstChild("swimidle") then Animate.swimidle.SwimidleAnim.AnimationId = norm(animID.swimidle) end
-    else
-        local folder = Animate:FindFirstChild(category)
-        if folder then
-            local name = category:gsub("^%l", string.upper).."Anim"
-            local animObj = folder:FindFirstChild(name) or folder:FindFirstChildOfClass("Animation")
-            if animObj then animObj.AnimationId = norm(animID) end
+    if bouldersFolder then
+        for _, child in ipairs(bouldersFolder:GetChildren()) do
+            if child and not hash[child.Name] then
+                hash[child.Name] = true
+                table.insert(names, child.Name)
+            end
         end
     end
-    task.wait(0.05)
-    Animate.Disabled = false
+    table.sort(names)
+    return names
 end
 
-local ANIMS = {
-    AmazonUnboxed = {
-        idle1=98281136301627, idle2=138183121662404, walk=90478085024465, run=134824450619865,
-        jump=121454505477205, climb=121145883950231, fall=94788218468396, swim=105962919001086,
-        swimidle=129126268464847, pose=133117300343405
-    },
-    Zombie = {idle1=3489171152,idle2=3489171152,walk=3489174223,run=3489173414,jump=616161997,climb=616156119,fall=616157476},
-    Hero = {idle1=616111295,idle2=616113536,walk=616122287,run=616117076,jump=616113998,climb=616107820,fall=616108936},
-    Ninja = {idle1=656117400,idle2=656118341,walk=656121766,run=656118852,jump=656117878,climb=656114359,fall=656115606},
-    Cartoon = {idle1=742637544,idle2=742638445,walk=742640026,run=742638842,jump=742637942,climb=742636889,fall=742637151},
-    Elder = {idle1=845397899,idle2=845400520,walk=845403044,run=845386501,jump=845398858,climb=845392038,fall=845388394},
-    Vampire = {idle1=1083445855,idle2=1083450166,walk=1083473930,run=1083462077,jump=1083455352,climb=1083439238,fall=1083443587},
-    Werewolf = {idle1=1083195517,idle2=1083214717,walk=1083216690,run=10921336997,jump=1083218792,climb=1083182000,fall=10921337907},
-    Ghost = {idle1=616006778,idle2=616008087,walk=616013216,run=616010382,jump=616008936,climb=616003713,fall=616004713},
-    ZombieClassic = {idle1=616158929,idle2=616160636,walk=616168032,run=616163682,jump=616161997,climb=616156119,fall=616157476},
-    Adidas2 = {idle1=18537376492,idle2=18537371272,walk=18537392113,run=18537384940,jump=18537380791,climb=18537363391,fall=18537367238},
-    Wicked = {idle1=92849173543269,idle2=132238900951109,walk=73718308412641,run=135515454877967,jump=78508480717326,climb=129447497744818,fall=78147885297412,pose=87867222929430},      
-}
+local scannedNames = GetBoulderNames()
 
-local function StopFly()
-    flying = false
-    noclip = false
-    if flyLoop then flyLoop:Disconnect() end
-    if noclipLoop then noclipLoop:Disconnect() end
-    if bv then bv:Destroy() end
-    if gy then gy:Destroy() end
-    local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
-    if hum then 
-        hum.WalkSpeed = lastWalkSpeed
-        hum:ChangeState(Enum.HumanoidStateType.GettingUp) 
-    end
+-- Pilihan Target Mining ("All" + Hasil Scan Workspace)
+local modelOptions = {"All"}
+for _, name in ipairs(scannedNames) do
+    table.insert(modelOptions, name)
 end
 
-local function StartFly()
-    if flying then return end
-    local char = plr.Character
+-- Pilihan ESP ("OFF", "All" + Hasil Scan Workspace)
+local espOptions = {"OFF", "All"}
+for _, name in ipairs(scannedNames) do
+    table.insert(espOptions, name)
+end
+
+---------------------------------------------------------
+-- 1. UTILITY: DYNAMIC TARGET FINDER
+---------------------------------------------------------
+local function GetNextTarget()
+    if not bouldersFolder then return nil end
+
+    local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return end
 
-    flying = true
-    noclip = true
-    lastWalkSpeed = hum.WalkSpeed
-    hum.WalkSpeed = 0 
+    local closestTarget = nil
+    local shortestDistance = math.huge
 
-    bv = Instance.new("BodyVelocity", hrp)
-    bv.MaxForce = Vector3.new(1e6, 1e6, 1e6)
-    bv.Velocity = Vector3.zero
-    
-    gy = Instance.new("BodyGyro", hrp)
-    gy.MaxTorque = Vector3.new(1e6, 1e6, 1e6)
-    gy.P = 3000
-    gy.D = 500
-
-    flyLoop = RunService.RenderStepped:Connect(function()
-        local cam = workspace.CurrentCamera
-        local dir = Vector3.zero
-        if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end
-        if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end
-        if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end
-        if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end
-        if UIS:IsKeyDown(Enum.KeyCode.Space) then dir += Vector3.new(0, 1, 0) end
-        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then dir -= Vector3.new(0, 1, 0) end
-        bv.Velocity = dir.Magnitude > 0 and (dir.Unit * flySpeed) or Vector3.zero
-        local camLook = cam.CFrame.LookVector
-        gy.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + Vector3.new(camLook.X, 0, camLook.Z))
-        hum:ChangeState(Enum.HumanoidStateType.Physics)
-    end)
-
-    noclipLoop = RunService.Stepped:Connect(function()
-        if noclip and char then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
+    for _, child in ipairs(bouldersFolder:GetChildren()) do
+        if child and child.Parent then
+            -- Filter berdasarkan Dropdown Auto Mining
+            if selectedMiningTarget ~= "All" and child.Name ~= selectedMiningTarget then
+                continue
             end
-        end
-    end)
-end
 
-local function ServerHop()
-    local Servers = {}
-    local success, result = pcall(function()
-        return game:HttpGetAsync("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
-    end)
-    if success and result then
-        local decodeSuccess, decoded = pcall(function() return HttpService:JSONDecode(result) end)
-        if decodeSuccess and decoded and decoded.data then
-            for _, v in ipairs(decoded.data) do
-                if type(v) == "table" and v.playing and v.maxPlayers and v.playing < v.maxPlayers and v.id ~= game.JobId then
-                    table.insert(Servers, v.id)
-                end
-            end
-        end
-    end
-    if #Servers > 0 then
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, Servers[math.random(1, #Servers)], plr)
-    else
-        TeleportService:Teleport(game.PlaceId, plr)
-    end
-end
-
-UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.F then
-        if flying then StopFly() else StartFly() end
-    end
-end)
-
-walkSpeedLoop = RunService.Heartbeat:Connect(function()
-    if not flying and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
-        plr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = lastWalkSpeed
-    end
-end)
-
-local RagdollSystem
-pcall(function()
-    local package = ReplicatedStorage:WaitForChild("RagdollSystemPackage", 2)
-    if package then
-        RagdollSystem = require(package:WaitForChild("RagdollSystem", 2))
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if antiRagdollEnabled and RagdollSystem then
-            pcall(function()
-                local localRagdoll = RagdollSystem:getLocalRagdoll()
-                if localRagdoll then
-                    if localRagdoll.isRagdolled and localRagdoll:isRagdolled() then
-                        localRagdoll:deactivateRagdollPhysics()
-                        if RagdollSystem.Remotes and RagdollSystem.Remotes.DeactivateRagdoll then
-                            RagdollSystem.Remotes.DeactivateRagdoll:FireServer()
-                        end
-                    end
-                end
-            end)
-        end
-    end
-end)
-
--- ================================================================= --
--- PROXIMITY PROMPT SYSTEM (CACHE & TRIGGER LOGIC)
--- ================================================================= --
-for _, obj in ipairs(workspace:GetDescendants()) do
-    if obj:IsA("ProximityPrompt") then
-        table.insert(promptCache, obj)
-    end
-end
-
-workspace.DescendantAdded:Connect(function(obj)
-    if obj:IsA("ProximityPrompt") then
-        table.insert(promptCache, obj)
-    end
-end)
-
-workspace.DescendantRemoving:Connect(function(obj)
-    if obj:IsA("ProximityPrompt") then
-        for i, prompt in ipairs(promptCache) do
-            if prompt == obj then
-                table.remove(promptCache, i)
-                break
-            end
-        end
-    end
-end)
-
-local function GetNearestPrompt()
-    local char = plr.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-
-    local nearestPrompt = nil
-    local shortestDist = math.huge
-
-    for _, prompt in ipairs(promptCache) do
-        if prompt.Enabled and prompt.Parent then
-            local parent = prompt.Parent
             local pos = nil
-            
-            if parent:IsA("BasePart") then
-                pos = parent.Position
-            elseif parent:IsA("Model") then
-                pos = parent.PrimaryPart and parent.PrimaryPart.Position or parent:GetPivot().Position
-            elseif parent:IsA("Attachment") then
-                pos = parent.WorldPosition
+            if child:IsA("Model") then
+                pos = child.PrimaryPart and child.PrimaryPart.Position or child:GetPivot().Position
+            elseif child:IsA("BasePart") then
+                pos = child.Position
             end
 
             if pos then
-                local dist = (hrp.Position - pos).Magnitude
-                if dist <= prompt.MaxActivationDistance and dist < shortestDist then
-                    shortestDist = dist
-                    nearestPrompt = prompt
+                if hrp then
+                    local dist = (hrp.Position - pos).Magnitude
+                    if dist < shortestDistance then
+                        shortestDistance = dist
+                        closestTarget = child
+                    end
+                else
+                    return child
                 end
             end
         end
     end
-    return nearestPrompt
+
+    return closestTarget
 end
 
+local function GetTargetModelPosition(target)
+    local obj = target or currentTargetModel
+    if obj and obj.Parent then
+        return obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position) or obj.Position
+    end
+    return nil
+end
+
+---------------------------------------------------------
+-- 2. PEMBUATAN UI RETRO (WINDOWS 95)
+---------------------------------------------------------
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RetroMiningUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainFrame"
+mainFrame.Size = UDim2.new(0, 320, 0, 320)
+mainFrame.Position = UDim2.new(0.5, -160, 0.35, -160)
+mainFrame.BackgroundColor3 = Color3.fromRGB(192, 192, 192)
+mainFrame.BorderSizePixel = 2
+mainFrame.BorderColor3 = Color3.fromRGB(255, 255, 255)
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, -4, 0, 24)
+titleBar.Position = UDim2.new(0, 2, 0, 2)
+titleBar.BackgroundColor3 = Color3.fromRGB(0, 0, 128)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(1, -30, 1, 0)
+titleText.Position = UDim2.new(0, 6, 0, 0)
+titleText.BackgroundTransparency = 1
+titleText.Text = "C:\\AUTO_MINING_SYSTEM.EXE"
+titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleText.Font = Enum.Font.Code
+titleText.TextSize = 13
+titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.Parent = titleBar
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 18, 0, 18)
+closeButton.Position = UDim2.new(1, -21, 0, 3)
+closeButton.BackgroundColor3 = Color3.fromRGB(192, 192, 192)
+closeButton.Text = "X"
+closeButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+closeButton.Font = Enum.Font.SourceSansBold
+closeButton.TextSize = 12
+closeButton.BorderSizePixel = 1
+closeButton.Parent = titleBar
+
+closeButton.MouseButton1Click:Connect(function()
+    screenGui.Enabled = false
+end)
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, -20, 0, 30)
+statusLabel.Position = UDim2.new(0, 10, 0, 35)
+statusLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+statusLabel.Font = Enum.Font.Code
+statusLabel.TextSize = 12
+statusLabel.Text = "> SYS_INIT: GAS BANG"
+statusLabel.BorderSizePixel = 2
+statusLabel.BorderColor3 = Color3.fromRGB(128, 128, 128)
+statusLabel.Parent = mainFrame
+
+-- Helper Function: Custom Dropdown Windows 95
+local function CreateDropdown(parent, yPos, labelText, options, defaultText, callback)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0, 100, 0, 20)
+    label.Position = UDim2.new(0, 10, 0, yPos)
+    label.BackgroundTransparency = 1
+    label.Text = labelText
+    label.TextColor3 = Color3.fromRGB(0, 0, 0)
+    label.Font = Enum.Font.Code
+    label.TextSize = 11
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = parent
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 190, 0, 22)
+    btn.Position = UDim2.new(0, 120, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Text = "  " .. defaultText .. "  v"
+    btn.TextColor3 = Color3.fromRGB(0, 0, 0)
+    btn.Font = Enum.Font.Code
+    btn.TextSize = 11
+    btn.BorderSizePixel = 1
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.Parent = parent
+
+    local container = Instance.new("ScrollingFrame")
+    container.Size = UDim2.new(0, 190, 0, math.min(#options * 22, 110))
+    container.Position = UDim2.new(0, 120, 0, yPos + 24)
+    container.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    container.BorderSizePixel = 1
+    container.Visible = false
+    container.ZIndex = 10
+    container.CanvasSize = UDim2.new(0, 0, 0, #options * 22)
+    container.ScrollBarThickness = 4
+    container.Parent = parent
+
+    local layout = Instance.new("UIListLayout")
+    layout.Parent = container
+
+    for _, opt in ipairs(options) do
+        local optBtn = Instance.new("TextButton")
+        optBtn.Size = UDim2.new(1, 0, 0, 22)
+        optBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        optBtn.Text = "  " .. opt
+        optBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+        optBtn.Font = Enum.Font.Code
+        optBtn.TextSize = 11
+        optBtn.BorderSizePixel = 0
+        optBtn.TextXAlignment = Enum.TextXAlignment.Left
+        optBtn.ZIndex = 11
+        optBtn.Parent = container
+
+        optBtn.MouseButton1Click:Connect(function()
+            btn.Text = "  " .. opt .. "  v"
+            container.Visible = false
+            callback(opt)
+        end)
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        container.Visible = not container.Visible
+    end)
+end
+
+-- Dropdown Auto Mining
+CreateDropdown(mainFrame, 75, "TARGET MINING:", modelOptions, "All", function(selected)
+    selectedMiningTarget = selected
+end)
+
+-- Dropdown ESP Model
+CreateDropdown(mainFrame, 105, "ESP MODEL:", espOptions, "All", function(selected)
+    selectedESPTarget = selected
+    if updateAllESP then updateAllESP() end
+end)
+
+local startButton = Instance.new("TextButton")
+startButton.Size = UDim2.new(0, 140, 0, 30)
+startButton.Position = UDim2.new(0, 10, 0, 140)
+startButton.BackgroundColor3 = Color3.fromRGB(192, 192, 192)
+startButton.Text = "[ START BANG ]"
+startButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+startButton.Font = Enum.Font.Code
+startButton.TextSize = 11
+startButton.BorderSizePixel = 2
+startButton.Parent = mainFrame
+
+local stopButton = Instance.new("TextButton")
+stopButton.Size = UDim2.new(0, 140, 0, 30)
+stopButton.Position = UDim2.new(1, -150, 0, 140)
+stopButton.BackgroundColor3 = Color3.fromRGB(192, 192, 192)
+stopButton.Text = "[ STOP BANG ]"
+stopButton.TextColor3 = Color3.fromRGB(0, 0, 0)
+stopButton.Font = Enum.Font.Code
+stopButton.TextSize = 11
+stopButton.BorderSizePixel = 2
+stopButton.Parent = mainFrame
+
+local hopButton = Instance.new("TextButton")
+hopButton.Size = UDim2.new(1, -20, 0, 30)
+hopButton.Position = UDim2.new(0, 10, 0, 180)
+hopButton.BackgroundColor3 = Color3.fromRGB(192, 192, 192)
+hopButton.Text = "[ SERVER HOP ]"
+hopButton.TextColor3 = Color3.fromRGB(0, 0, 128)
+hopButton.Font = Enum.Font.Code
+hopButton.TextSize = 11
+hopButton.BorderSizePixel = 2
+hopButton.Parent = mainFrame
+
+local footerLabel = Instance.new("TextLabel")
+footerLabel.Size = UDim2.new(1, -20, 0, 30)
+footerLabel.Position = UDim2.new(0, 10, 0, 280)
+footerLabel.BackgroundTransparency = 1
+footerLabel.Text = "SIKII AAAAAA"
+footerLabel.TextColor3 = Color3.fromRGB(0, 0, 128)
+footerLabel.Font = Enum.Font.Code
+footerLabel.TextSize = 10
+footerLabel.TextWrapped = true
+footerLabel.Parent = mainFrame
+
+---------------------------------------------------------
+-- 3. HIGHLIGHT & UTILITIES ESP (FORCE TRANSPARENCY LOCK INTEGRATED)
+---------------------------------------------------------
+local voltiteHighlightCache = {}
+
+local function applyBoulderESP(boulder)
+    if not (boulder:IsA("Model") or boulder:IsA("BasePart")) then return end
+
+    -- 1. Force Transparency Lock: Memastikan transparansi selalu 0 (Anti-Hide/Transparan)
+    for _, child in ipairs(boulder:GetDescendants()) do
+        if child:IsA("BasePart") then
+            child.Transparency = 0
+            
+            -- Lock real-time jika script game mengubah transparansi
+            if not child:FindFirstChild("TransparencyLock") then
+                local tag = Instance.new("BoolValue")
+                tag.Name = "TransparencyLock"
+                tag.Parent = child
+
+                child:GetPropertyChangedSignal("Transparency"):Connect(function()
+                    if child.Transparency > 0 then
+                        child.Transparency = 0
+                    end
+                end)
+            end
+        end
+    end
+
+    -- 2. Highlights Engine
+    local highlight = voltiteHighlightCache[boulder] or boulder:FindFirstChild("BoulderESP")
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "BoulderESP"
+        highlight.FillColor = Color3.fromRGB(0, 255, 128)      -- Hijau Neon
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)  -- Outline Putih
+        highlight.FillTransparency = 0.4
+        highlight.OutlineTransparency = 0
+        highlight.Adornee = boulder
+        highlight.Parent = boulder
+        voltiteHighlightCache[boulder] = highlight
+    end
+
+    -- Dynamic Match berdasarkan pilihan Dropdown ESP
+    if selectedESPTarget == "OFF" then
+        highlight.Enabled = false
+    elseif selectedESPTarget == "All" then
+        highlight.Enabled = true
+    else
+        highlight.Enabled = (boulder.Name == selectedESPTarget)
+    end
+end
+
+function updateAllESP()
+    if bouldersFolder then
+        for _, child in ipairs(bouldersFolder:GetChildren()) do
+            applyBoulderESP(child)
+        end
+    end
+end
+
+task.spawn(function()
+    if bouldersFolder then
+        updateAllESP()
+        bouldersFolder.ChildAdded:Connect(applyBoulderESP)
+    end
+end)
+
+---------------------------------------------------------
+-- SERVER HOP FITUR
+---------------------------------------------------------
+local function ServerHop()
+    statusLabel.Text = "> SEARCHING NEW SERVER..."
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+    
+    local placeId = game.PlaceId
+    local servers = {}
+    local req = request or http_request or (syn and syn.request)
+    
+    if req then
+        local url = string.format("https://games.roblox.com/v1/games/%s/servers/0?sortOrder=Asc&limit=100", tostring(placeId))
+        local response = req({Url = url, Method = "GET"})
+        if response and response.Body then
+            local data = HttpService:JSONDecode(response.Body)
+            if data and data.data then
+                for _, s in ipairs(data.data) do
+                    if type(s) == "table" and s.playing < s.maxPlayers and s.id ~= game.JobId then
+                        table.insert(servers, s.id)
+                    end
+                end
+            end
+        end
+    end
+
+    if #servers > 0 then
+        local randomServer = servers[math.random(1, #servers)]
+        statusLabel.Text = "> TELEPORTING..."
+        TeleportService:TeleportToPlaceInstance(placeId, randomServer, player)
+    else
+        statusLabel.Text = "> HOPPING TO RANDOM..."
+        TeleportService:Teleport(placeId, player)
+    end
+end
+
+hopButton.MouseButton1Click:Connect(ServerHop)
+
+---------------------------------------------------------
+-- 4. AUTOMATION LOOPS
+---------------------------------------------------------
+
+-- A. Auto Dig & Auto Aim Ke Model Aktif
+local digMultiplier = 2
+RunService.Heartbeat:Connect(function()
+    if isDiggingActive and DigEvent then
+        local character = player.Character
+        local currentTool = character and character:FindFirstChildOfClass("Tool")
+        if not currentTool then return end
+
+        local dynamicItemName = currentTool.Name
+        local targetPos = GetTargetModelPosition(currentTargetModel) or player:GetMouse().Hit.Position
+
+        if targetPos then
+            for i = 1, digMultiplier do
+                DigEvent:FireServer(dynamicItemName, targetPos)
+            end
+        end
+    end
+end)
+
+-- B. Auto Collect Prompt & Cache
+local promptCache = {}
+for _, obj in ipairs(workspace:GetDescendants()) do
+    if obj:IsA("ProximityPrompt") then table.insert(promptCache, obj) end
+end
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("ProximityPrompt") then table.insert(promptCache, obj) end
+end)
+workspace.DescendantRemoving:Connect(function(obj)
+    if obj:IsA("ProximityPrompt") then
+        local idx = table.find(promptCache, obj)
+        if idx then table.remove(promptCache, idx) end
+    end
+end)
+
 local function TriggerPrompt(prompt)
-    if not prompt then return end
+    if not isCollectActive or not prompt then return end
     pcall(function()
         prompt.HoldDuration = 0
         if fireproximityprompt then
@@ -376,425 +470,345 @@ local function TriggerPrompt(prompt)
     end)
 end
 
--- Event Listener untuk Instant Fire Prompt (Manual Hit)
-ProximityPromptService.PromptShown:Connect(function(prompt)
-    if instantPromptEnabled then
-        pcall(function() prompt.HoldDuration = 0 end)
+local function HasCollectablesInRange(radius)
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    for _, prompt in ipairs(promptCache) do
+        if prompt and prompt.Enabled and prompt.Parent then
+            local parent = prompt.Parent
+            local pos = parent:IsA("BasePart") and parent.Position or (parent:IsA("Model") and parent:GetPivot().Position)
+            if pos then
+                local dist = (hrp.Position - pos).Magnitude
+                if dist <= (radius or COLLECT_RADIUS) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+ProximityPromptService.PromptShown:Connect(function(prompt) 
+    if isCollectActive then
+        pcall(function() prompt.HoldDuration = 0 end) 
     end
 end)
 
 ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
-    if instantPromptEnabled then
+    if isCollectActive then
         TriggerPrompt(prompt)
     end
 end)
--- ================================================================= --
 
-espHeartbeatLoop = RunService.Heartbeat:Connect(function()
-    local cam = workspace.CurrentCamera
-    local viewportSize = cam.ViewportSize
+RunService.Heartbeat:Connect(function()
+    if not isCollectActive then return end
 
-    for player, drawings in pairs(espCache) do
-        local character = player.Character
-        local hrp = character and character:FindFirstChild("HumanoidRootPart")
-        local hum = character and character:FindFirstChildOfClass("Humanoid")
-
-        if espEnabled and hrp and hum and hum.Health > 0 then
-            local hrpPos, onScreen = cam:WorldToViewportPoint(hrp.Position)
-
-            if onScreen then
-                local distance = (cam.CFrame.Position - hrp.Position).Magnitude
-                local boxHeight = math.clamp((1000 / distance) * 3.5, 10, viewportSize.Y)
-                local boxWidth = boxHeight * 0.6
-
-                drawings.Box.Size = Vector2.new(boxWidth, boxHeight)
-                drawings.Box.Position = Vector2.new(hrpPos.X - boxWidth / 2, hrpPos.Y - boxHeight / 2)
-                drawings.Box.Visible = true
-
-                drawings.BoxOutline.Size = drawings.Box.Size
-                drawings.BoxOutline.Position = drawings.Box.Position
-                drawings.BoxOutline.Visible = true
-
-                drawings.NameTag.Text = string.format("%s [%d HP]", player.Name, math.floor(hum.Health))
-                drawings.NameTag.Position = Vector2.new(hrpPos.X, hrpPos.Y - (boxHeight / 2) - 15)
-                drawings.NameTag.Visible = true
-
-                if espLinesEnabled then
-                    drawings.Tracer.From = Vector2.new(viewportSize.X / 2, viewportSize.Y)
-                    drawings.Tracer.To = Vector2.new(hrpPos.X, hrpPos.Y + boxHeight / 2)
-                    drawings.Tracer.Visible = true
-                else
-                    drawings.Tracer.Visible = false
-                end
-            else
-                drawings.Box.Visible = false
-                drawings.BoxOutline.Visible = false
-                drawings.NameTag.Visible = false
-                drawings.Tracer.Visible = false
-            end
-        else
-            drawings.Box.Visible = false
-            drawings.BoxOutline.Visible = false
-            drawings.NameTag.Visible = false
-            drawings.Tracer.Visible = false
-        end
-    end
-end)
-
-local PresetTab = gui:tab{ Name = "Full Presets", Icon = "rbxassetid://6034996695" }
-for name, data in pairs(ANIMS) do
-    PresetTab:button({
-        Name = name,
-        Callback = function()
-            ApplySingle("idle", {idle1=data.idle1, idle2=data.idle2 or data.idle1})
-            ApplySingle("walk", data.walk)
-            ApplySingle("run", data.run)
-            ApplySingle("jump", data.jump)
-            ApplySingle("climb", data.climb)
-            ApplySingle("fall", data.fall)
-            if data.swim then ApplySingle("swim", {swim=data.swim, swimidle=data.swimidle or data.swim}) end
-        end
-    })
-end
-
-local function CreateOnlyTab(tabName, category)
-    local tab = gui:tab{ Name = tabName, Icon = "rbxassetid://6034996695" }
-    for name, data in pairs(ANIMS) do
-        if data[category] or (category == "idle" and data.idle1) then
-            tab:button({
-                Name = name,
-                Callback = function()
-                    if category == "idle" then
-                        ApplySingle("idle", {idle1=data.idle1, idle2=data.idle2 or data.idle1})
-                    elseif category == "swim" and data.swim then
-                        ApplySingle("swim", {swim=data.swim, swimidle=data.swimidle or data.swim})
-                    else
-                        if data[category] then ApplySingle(category, data[category]) end
-                    end
-                end
-            })
-        end
-    end
-end
-
-CreateOnlyTab("IDLE Only", "idle")
-CreateOnlyTab("WALK Only", "walk")
-CreateOnlyTab("RUN Only", "run")
-CreateOnlyTab("JUMP Only", "jump")
-CreateOnlyTab("CLIMB Only", "climb")
-CreateOnlyTab("FALL Only", "fall")
-CreateOnlyTab("SWIM Only", "swim")
-
-local PoseTab = gui:tab{ Name = "Pose", Icon = "rbxassetid://6034996695" }
-PoseTab:button({ Name = "⛔ STOP ANIMATION", Callback = StopAnim })
-PoseTab:button({ Name = "AMAZON POSE", Callback = function() PlayAnim(norm("133117300343405"), {value=currentPose}) end })
-
-local EmoteTab = gui:tab{ Name = "Emote", Icon = "rbxassetid://6034996695" }
-local function AddEmote(n,id) EmoteTab:button({ Name = n, Callback = function() PlayAnim(norm(id),{value=currentEmote}) end }) end
-AddEmote("Rakai", "71494363833326") 
-AddEmote("Michael", "88285541926517") 
-AddEmote("Hip Sway", "138316142522795") 
-AddEmote("NYC Sturdy", "140333103929828")
-EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote then currentEmote:Stop() end StopAnim() end })
-
---------------------------------------------------------------------------------
--- PENGATURAN ESP & FORCE TRANSPARENCY BOULDERS (SISTEM REVISED)
---------------------------------------------------------------------------------
-local function ClearVoltiteHighlight()
-    for obj, hl in pairs(voltiteHighlightCache) do
-        pcall(function() hl:Destroy() end)
-    end
-    table.clear(voltiteHighlightCache)
-end
-
-local function applyBoulderESP(boulder)
-    if not boulder:IsA("Model") then return end
-
-    -- 1. Paksa seluruh MeshPart / BasePart agar Transparansi = 0
-    for _, child in ipairs(boulder:GetDescendants()) do
-        if child:IsA("BasePart") then
-            child.Transparency = 0
-            
-            -- Lock agar tidak bisa diubah kembali jadi transparan oleh game
-            child:GetPropertyChangedSignal("Transparency"):Connect(function()
-                if child.Transparency > 0 then
-                    child.Transparency = 0
-                end
-            end)
-        end
-    end
-
-    -- 2. Pasang ESP Highlight warna Hijau Neon
-    local highlight = voltiteHighlightCache[boulder] or boulder:FindFirstChild("BoulderESP")
-    if not highlight then
-        highlight = Instance.new("Highlight")
-        highlight.Name = "BoulderESP"
-        highlight.FillColor = Color3.fromRGB(0, 255, 128) -- Hijau Neon
-        highlight.OutlineColor = Color3.fromRGB(255, 255, 255) -- Outline Putih
-        highlight.FillTransparency = 0.4
-        highlight.OutlineTransparency = 0
-        highlight.Adornee = boulder
-        highlight.Parent = boulder
-        voltiteHighlightCache[boulder] = highlight
-    end
-    highlight.Enabled = voltiteHighlightEnabled
-end
-
-local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
-
-LocalTab:toggle({ 
-    Name = "🔮 Boulders Highlight (Green ESP)", 
-    Callback = function(state) 
-        voltiteHighlightEnabled = state
-        
-        for obj, hl in pairs(voltiteHighlightCache) do
-            if hl then hl.Enabled = state end
-        end
-    end 
-})
-
--- Event listener & Inisialisasi awal Boulders
-task.spawn(function()
-    local targetPath = workspace:WaitForChild("MountainDecorations", 10)
-    targetPath = targetPath and targetPath:WaitForChild("Boulders", 10)
-    
-    if targetPath then
-        for _, child in ipairs(targetPath:GetChildren()) do
-            applyBoulderESP(child)
-        end
-        
-        targetPath.ChildAdded:Connect(function(child)
-            applyBoulderESP(child)
-        end)
-    end
-end)
-
-local function GetNearestBoulderPosition()
-    local targetPath = workspace:FindFirstChild("MountainDecorations")
-    targetPath = targetPath and targetPath:FindFirstChild("Boulders")
-    if not targetPath then return nil end
-
-    local char = plr.Character
+    local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local shortestDist = math.huge
+    local nearestPrompt = nil
+
+    for _, prompt in ipairs(promptCache) do
+        if prompt.Enabled and prompt.Parent then
+            local parent = prompt.Parent
+            local pos = parent:IsA("BasePart") and parent.Position or (parent:IsA("Model") and parent:GetPivot().Position)
+            if pos then
+                local dist = (hrp.Position - pos).Magnitude
+                if dist <= prompt.MaxActivationDistance and dist < shortestDist then
+                    shortestDist = dist
+                    nearestPrompt = prompt
+                end
+            end
+        end
+    end
+
+    if nearestPrompt then
+        TriggerPrompt(nearestPrompt)
+    end
+end)
+
+---------------------------------------------------------
+-- 5. TWEEN ENGINE & LOCK SYSTEM
+---------------------------------------------------------
+
+local function getBottomCFrame(target)
+    if target:IsA("Model") then
+        local cframe, size = target:GetBoundingBox()
+        return cframe * CFrame.new(0, 3, 0)
+    else
+        return target.CFrame * CFrame.new(0, 3, 0)
+    end
+end
+
+local function applyPositionLock(character)
+    local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
 
-    local nearestPos = nil
-    local shortestDist = 50
+    local bv = hrp:FindFirstChild("TempLockVelocity") or Instance.new("BodyVelocity")
+    bv.Name = "TempLockVelocity"
+    bv.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+    bv.Velocity = Vector3.zero
+    bv.Parent = hrp
 
-    for _, obj in ipairs(targetPath:GetChildren()) do
-        if obj:IsA("Model") or obj:IsA("BasePart") then
-            local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position) or obj.Position
-            local dist = (hrp.Position - pos).Magnitude
-            if dist < shortestDist then
-                shortestDist = dist
-                nearestPos = pos
-            end
-        end
-    end
-    return nearestPos
+    return bv
 end
 
-LocalTab:slider({ 
-    Name = "⚡ Dig Speed Multiplier", 
-    Default = 2, 
-    Min = 1, 
-    Max = 10, 
-    Callback = function(v) digMultiplier = v end 
-})
+local function removePositionLock(character)
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local bv = hrp:FindFirstChild("TempLockVelocity")
+        if bv then bv:Destroy() end
+    end
+end
 
-LocalTab:toggle({ 
-    Name = "🧲 Auto-Aim Nearest Boulder", 
-    Callback = function(state) autoAimBoulder = state end 
-})
+local activeTween = nil
+local function tweenToTarget(character, targetCFrame, studsPerSecond)
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not hrp or not humanoid then return false end
 
-LocalTab:toggle({ 
-    Name = "🤖 Auto Dig (No Click Required)", 
-    Callback = function(state) autoDigNoClick = state end 
-})
+    local distance = (hrp.Position - targetCFrame.Position).Magnitude
+    local duration = math.max(distance / (studsPerSecond or TWEEN_SPEED), 0.1)
 
-LocalTab:toggle({ 
-    Name = "🔥 Turbo Dig (Master Switch)", 
-    Callback = function(state) 
-        turboDigEnabled = state
-        
-        if turboDigLoop then 
-            turboDigLoop:Disconnect() 
-            turboDigLoop = nil
+    for _, part in ipairs(character:GetChildren()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
         end
-        
-        if turboDigEnabled and DigEvent then
-            local fastEvent = DigEvent
-            local fastMouse = plr:GetMouse()
-            local fastUis = UIS
-            local localPlayer = plr
-            local mouseLeft = Enum.UserInputType.MouseButton1
-            
-            turboDigLoop = RunService.Heartbeat:Connect(function()
-                if autoDigNoClick or fastUis:IsMouseButtonPressed(mouseLeft) then
-                    local character = localPlayer.Character
-                    local currentTool = character and character:FindFirstChildOfClass("Tool")
-                    
-                    if autoDigNoClick and not currentTool then return end
-                    
-                    local dynamicItemName = currentTool and currentTool.Name or "Celestial Apex" 
-                    local targetPos = nil
-                    
-                    if autoAimBoulder then
-                        targetPos = GetNearestBoulderPosition()
-                    end
-                    
-                    if not targetPos and fastMouse.Hit then
-                        targetPos = fastMouse.Hit.Position
-                    end
+    end
 
-                    if targetPos then
-                        for i = 1, digMultiplier do
-                            fastEvent:FireServer(dynamicItemName, targetPos)
+    humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+    
+    hrp.AssemblyLinearVelocity = Vector3.zero
+    hrp.AssemblyAngularVelocity = Vector3.zero
+
+    local tweenInfo = TweenInfo.new(
+        duration,
+        Enum.EasingStyle.Linear,
+        Enum.EasingDirection.InOut
+    )
+
+    activeTween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
+    activeTween:Play()
+
+    local completed = false
+    local conn
+    conn = activeTween.Completed:Connect(function()
+        completed = true
+        if conn then conn:Disconnect() end
+    end)
+
+    while not completed and isSequenceRunning do
+        task.wait(0.05)
+    end
+
+    for _, part in ipairs(character:GetChildren()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.CanCollide = true
+        end
+    end
+    
+    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+    hrp.AssemblyLinearVelocity = Vector3.zero
+
+    if isSequenceRunning then
+        applyPositionLock(character)
+        return true
+    end
+    return false
+end
+
+local function getToolFromBackpackOrChar(toolName, character)
+    local backpack = player:FindFirstChildOfClass("Backpack")
+    local inBackpack = backpack and backpack:FindFirstChild(toolName)
+    if inBackpack then return inBackpack end
+    return character:FindFirstChild(toolName)
+end
+
+---------------------------------------------------------
+-- 6. UTAMA: LOOPING MULTI-TARGET SEQUENCE
+---------------------------------------------------------
+
+startButton.MouseButton1Click:Connect(function()
+    if isSequenceRunning then return end
+
+    task.spawn(function()
+        isSequenceRunning = true
+
+        while isSequenceRunning do
+            currentTargetModel = GetNextTarget()
+
+            if not currentTargetModel or not currentTargetModel.Parent then
+                statusLabel.Text = "> ALL TARGETS CLEARED! WAITING..."
+                statusLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+                task.wait(2)
+                continue
+            end
+
+            local character = player.Character or player.CharacterAdded:Wait()
+            local hrp = character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+            if not hrp or not humanoid then break end
+
+            local bombTool = getToolFromBackpackOrChar("Classic Bomb", character)
+            if not bombTool then
+                statusLabel.Text = "> ERR: NO CLASSIC BOMB!"
+                statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+                isSequenceRunning = false
+                break
+            end
+
+            isDiggingActive = false
+            isCollectActive = false
+
+            statusLabel.Text = "> GLIDING TO: " .. currentTargetModel.Name
+            statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+
+            local targetCFrame = getBottomCFrame(currentTargetModel)
+            local success = tweenToTarget(character, targetCFrame, TWEEN_SPEED)
+            
+            if not success or not isSequenceRunning then break end
+
+            for i = 2, 1, -1 do
+                if not isSequenceRunning then break end
+                statusLabel.Text = string.format("> HOLDING POSITION (%d S)...", i)
+                statusLabel.TextColor3 = Color3.fromRGB(0, 191, 255)
+                task.wait(1)
+            end
+            if not isSequenceRunning then break end
+
+            statusLabel.Text = "> DROPPING BOMB..."
+            statusLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
+
+            if bombTool.Parent ~= character then
+                humanoid:EquipTool(bombTool)
+                task.wait(0.3)
+            end
+            
+            bombTool:Activate()
+            task.wait(0.5)
+
+            for i = math.ceil(BOMB_EXPLODE_DELAY), 1, -1 do
+                if not isSequenceRunning then break end
+                statusLabel.Text = string.format("> WAITING EXPLOSION (%d S)...", i)
+                statusLabel.TextColor3 = Color3.fromRGB(255, 69, 0)
+                task.wait(1)
+            end
+            if not isSequenceRunning then break end
+
+            removePositionLock(character)
+
+            statusLabel.Text = "> EQUIPPING PICKAXE..."
+            statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+            local pickaxeTool = nil
+            local backpack = player:FindFirstChildOfClass("Backpack")
+            local playerData = player:FindFirstChild("PlayerData")
+            local invPickaxes = playerData and playerData:FindFirstChild("Inventory") and playerData.Inventory:FindFirstChild("Pickaxes")
+
+            local targetPickaxeName = nil
+            if invPickaxes then
+                local equippedValue = invPickaxes:FindFirstChild("Equipped") or invPickaxes:FindFirstChildOfClass("StringValue")
+                if equippedValue and equippedValue:IsA("ValueBase") then
+                    targetPickaxeName = tostring(equippedValue.Value)
+                else
+                    local firstPick = invPickaxes:GetChildren()[1]
+                    if firstPick then targetPickaxeName = firstPick.Name end
+                end
+            end
+
+            if backpack then
+                if targetPickaxeName then
+                    pickaxeTool = backpack:FindFirstChild(targetPickaxeName) or character:FindFirstChild(targetPickaxeName)
+                end
+                
+                if not pickaxeTool then
+                    for _, item in ipairs(backpack:GetChildren()) do
+                        if item:IsA("Tool") and string.find(item.Name:lower(), "pickaxe") then
+                            pickaxeTool = item
+                            break
                         end
                     end
                 end
-            end)
-        end
-    end 
-})
-
-LocalTab:toggle({ 
-    Name = "💎 Crystal Mine FX (On Prompt Triggered)", 
-    Callback = function(state) 
-        crystalMineEnabled = state
-        
-        if promptCrystalConnection then 
-            promptCrystalConnection:Disconnect() 
-            promptCrystalConnection = nil 
-        end
-        
-        if crystalMineEnabled and CrystalEvent then
-            local fastEvent = CrystalEvent
-            local localPlayer = plr
-            
-            promptCrystalConnection = ProximityPromptService.PromptTriggered:Connect(function(prompt)
-                local promptParent = prompt.Parent
-                local character = localPlayer.Character
-                local hrp = character and character:FindFirstChild("HumanoidRootPart")
-                
-                if promptParent and promptParent:IsA("BasePart") and hrp then
-                    local distance = (hrp.Position - promptParent.Position).Magnitude
-                    
-                    for i = 1, 25 do
-                        local pseudoRandom = math.random(1000, 9999)
-                        
-                        firesignal(fastEvent.OnClientEvent, 
-                            "hit",
-                            promptParent,        
-                            distance,            
-                            localPlayer.UserId,  
-                            pseudoRandom,        
-                            pseudoRandom + 2800  
-                        )
-                    end
-                end
-            end)
-        end
-    end 
-})
-
-LocalTab:button({ Name = "🌐 Server Hop", Callback = ServerHop })
-LocalTab:slider({ Name = "🚀 Fly Speed (Unlimited)", Default = 50, Min = 10, Max = 5000, Callback = function(v) flySpeed = v end })
-LocalTab:toggle({ Name = "Fly (F) + Noclip", Callback = function(v) if v then StartFly() else StopFly() end end })
-
-LocalTab:button({ 
-    Name = "💥 Load Touch Fling", 
-    Callback = function() 
-        pcall(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/SCRIPTHUB-dev-god/exploit/refs/heads/main/fling/the-touch-fling.luau",true))()
-        end)
-    end 
-})
-
-local infJumpEnabled = false
-local jumpDebounce = false
-UIS.JumpRequest:Connect(function()
-    if infJumpEnabled then
-        local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
-        if hum and not jumpDebounce then
-            jumpDebounce = true
-            hum:ChangeState(Enum.HumanoidStateType.Jumping)
-            task.wait(0.1)
-            jumpDebounce = false
-        end
-    end
-end)
-LocalTab:toggle({ Name = "Infinite Jump", Callback = function(s) infJumpEnabled = s end })
-
-LocalTab:toggle({ Name = "🛡️ Anti Ragdoll", Callback = function(state) 
-    antiRagdollEnabled = state 
-    if state and RagdollSystem then
-        pcall(function()
-            local localRagdoll = RagdollSystem:getLocalRagdoll()
-            if localRagdoll and localRagdoll:isRagdolled() then
-                localRagdoll:deactivateRagdollPhysics()
-                RagdollSystem.Remotes.DeactivateRagdoll:FireServer()
             end
-        end)
-    end
-end })
 
--- Tombol 1: Instant Fire Prompt (Manual Hit Instant)
-LocalTab:toggle({ 
-    Name = "⚡ Instant Fire Prompt", 
-    Callback = function(state) 
-        instantPromptEnabled = state 
-    end 
-})
-
--- Tombol 2: Auto Collect Nearest Prompt (Otomatis Ambil Terdekat)
-LocalTab:toggle({ 
-    Name = "🤖 Auto Collect Nearest Prompt", 
-    Callback = function(state) 
-        autoCollectPromptEnabled = state
-        
-        if autoCollectLoop then
-            autoCollectLoop:Disconnect()
-            autoCollectLoop = nil
-        end
-        
-        if autoCollectPromptEnabled then
-            autoCollectLoop = RunService.Heartbeat:Connect(function()
-                local nearest = GetNearestPrompt()
-                if nearest then
-                    TriggerPrompt(nearest)
+            if pickaxeTool and pickaxeTool:IsA("Tool") then
+                humanoid:EquipTool(pickaxeTool)
+                task.wait(0.3)
+            else
+                local invTool = invPickaxes and invPickaxes:FindFirstChildOfClass("Tool")
+                if invTool then
+                    humanoid:EquipTool(invTool)
+                    task.wait(0.3)
                 end
-            end)
+            end
+
+            isDiggingActive = true
+            statusLabel.Text = "> MINING: " .. currentTargetModel.Name
+            statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+
+            while currentTargetModel and currentTargetModel.Parent and isSequenceRunning do
+                task.wait(0.2)
+            end
+
+            isDiggingActive = false
+            if isSequenceRunning then
+                isCollectActive = true
+                statusLabel.Text = "> DESTROYED! COLLECTING ALL DROPS..."
+                statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                
+                task.wait(0.5)
+
+                local collectStartTime = tick()
+                local noItemsTimer = 0
+
+                while isSequenceRunning do
+                    if HasCollectablesInRange(COLLECT_RADIUS) then
+                        noItemsTimer = 0
+                    else
+                        noItemsTimer = noItemsTimer + 0.2
+                        if noItemsTimer >= 1.2 then
+                            break
+                        end
+                    end
+
+                    if (tick() - collectStartTime) >= MAX_COLLECT_TIMEOUT then
+                        break
+                    end
+
+                    task.wait(0.2)
+                end
+
+                isCollectActive = false
+            end
         end
-    end 
-})
 
-LocalTab:toggle({ Name = "👁️ Enable Player ESP (Box)", Callback = function(state) espEnabled = state end })
-LocalTab:toggle({ Name = "📏 Enable ESP Lines (Tracers)", Callback = function(state) espLinesEnabled = state end })
-LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 5000, Callback = function(v) lastWalkSpeed = v end })
+        if player.Character then removePositionLock(player.Character) end
+    end)
+end)
 
-local PlayerTab = gui:tab{ Name = "Players", Icon = "rbxassetid://6034996695" }
-local selectedPlayer
-local function GetPlayers() local t = {} for _,p in ipairs(Players:GetPlayers()) do if p ~= plr then table.insert(t,p.Name) end end return t end
-local dropdown = PlayerTab:dropdown({ Name = "Select Player", Items = GetPlayers(), Callback = function(v) selectedPlayer = v end })
-PlayerTab:button({ Name = "Refresh List", Callback = function() dropdown:SetItems(GetPlayers()) end })
-PlayerTab:button({ Name = "Teleport", Callback = function() 
-    local t = Players:FindFirstChild(selectedPlayer or "") 
-    if t and t.Character then plr.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame end 
-end})
-PlayerTab:button({ Name = "Spectate", Callback = function() 
-    local t = Players:FindFirstChild(selectedPlayer or "") 
-    if t and t.Character then workspace.CurrentCamera.CameraSubject = t.Character:FindFirstChildOfClass("Humanoid") end 
-end})
-PlayerTab:button({ Name = "Stop Spectate", Callback = function() 
-    if plr.Character then workspace.CurrentCamera.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid") end 
-end})
+stopButton.MouseButton1Click:Connect(function()
+    isSequenceRunning = false
+    isDiggingActive = false
+    isCollectActive = false
+    currentTargetModel = nil
 
-PlayerTab:button({
-    Name = "📋 Copy Player Appearance",
-    Callback = function()
-        pcall(function()
-            loadstring(game:HttpGet('https://raw.githubusercontent.com/Nearastro/Nearastro/refs/heads/main/00CopyAvaFE.lua'))()
-        end)
+    if activeTween then
+        activeTween:Cancel()
     end
-})
+
+    if player.Character then
+        removePositionLock(player.Character)
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end
+    end
+
+    statusLabel.Text = "> STOPPED ALL SYSTEMS!"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+end)
