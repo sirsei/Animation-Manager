@@ -50,12 +50,10 @@ local instantPromptEnabled = false
 local autoCollectPromptEnabled = false
 local autoCollectLoop = nil
 local promptCache = {}
-local autoCollectToggleRef = nil
 
--- Variabel FPS Boost & Lighting Settings Backup
+-- Variabel FPS Boost & Lighting
 local fpsBoostEnabled = false
 local fpsConnections = {}
-local lightSweepLoop = nil
 local originalLightingSettings = {
     GlobalShadows = Lighting.GlobalShadows,
     FogEnd = Lighting.FogEnd,
@@ -194,19 +192,6 @@ local ANIMS = {
     Wicked = {idle1=92849173543269,idle2=132238900951109,walk=73718308412641,run=135515454877967,jump=78508480717326,climb=129447497744818,fall=78147885297412,pose=87867222929430},      
 }
 
-local function ApplySet(setName)
-    local anims = ANIMS[setName]
-    if not anims then return end
-
-    if anims.idle1 and anims.idle2 then ApplySingle("idle", {idle1=anims.idle1, idle2=anims.idle2}) end
-    if anims.walk then ApplySingle("walk", anims.walk) end
-    if anims.run then ApplySingle("run", anims.run) end
-    if anims.jump then ApplySingle("jump", anims.jump) end
-    if anims.climb then ApplySingle("climb", anims.climb) end
-    if anims.fall then ApplySingle("fall", anims.fall) end
-    if anims.swim and anims.swimidle then ApplySingle("swim", {swim=anims.swim, swimidle=anims.swimidle}) end
-end
-
 local function StopFly()
     flying = false
     noclip = false
@@ -288,6 +273,13 @@ local function ServerHop()
     end
 end
 
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        if flying then StopFly() else StartFly() end
+    end
+end)
+
 walkSpeedLoop = RunService.Heartbeat:Connect(function()
     if not flying and plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then
         plr.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = lastWalkSpeed
@@ -322,7 +314,7 @@ task.spawn(function()
 end)
 
 -- ================================================================= --
--- PROXIMITY PROMPT SYSTEM (UNIVERSAL EXECUTOR ENGINE)
+-- PROXIMITY PROMPT SYSTEM (CACHE & COMPATIBILITY FIXED TRIGGER LOGIC)
 -- ================================================================= --
 local function RegisterPrompt(obj)
     if obj:IsA("ProximityPrompt") and not table.find(promptCache, obj) then
@@ -344,27 +336,6 @@ workspace.DescendantRemoving:Connect(function(obj)
         end
     end
 end)
-
-local function TriggerPrompt(prompt)
-    if not prompt or not prompt.Parent or not prompt.Enabled then return end
-    
-    pcall(function()
-        prompt.HoldDuration = 0
-        prompt.RequiresLineOfSight = false
-    end)
-
-    local fireFunc = fireproximityprompt or (typeof and typeof(fireproximityprompt) == "function" and fireproximityprompt)
-    
-    if fireFunc then
-        pcall(function() fireFunc(prompt) end)
-    else
-        pcall(function()
-            prompt:InputHoldBegin()
-            task.wait(0.001)
-            prompt:InputHoldEnd()
-        end)
-    end
-end
 
 local function GetNearestPrompt()
     local char = plr.Character
@@ -402,6 +373,27 @@ local function GetNearestPrompt()
     return nearestPrompt
 end
 
+-- Fix Lintas Executor untuk Instant / Auto Trigger Prompt
+local function TriggerPrompt(prompt)
+    if not prompt or not prompt.Parent or not prompt.Enabled then return end
+    
+    pcall(function()
+        prompt.HoldDuration = 0
+        prompt.RequiresLineOfSight = false
+    end)
+
+    -- Fallback multi-executor execution
+    pcall(function()
+        if typeof(fireproximityprompt) == "function" then
+            fireproximityprompt(prompt)
+        else
+            prompt:InputHoldBegin()
+            task.wait(0.01)
+            prompt:InputHoldEnd()
+        end
+    end)
+end
+
 ProximityPromptService.PromptShown:Connect(function(prompt)
     if instantPromptEnabled then
         pcall(function() 
@@ -414,55 +406,6 @@ end)
 ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
     if instantPromptEnabled then
         TriggerPrompt(prompt)
-    end
-end)
-
-local function ToggleAutoCollect(state, isKeybindTrigger)
-    autoCollectPromptEnabled = state
-
-    if autoCollectLoop then
-        task.cancel(autoCollectLoop)
-        autoCollectLoop = nil
-    end
-
-    if autoCollectPromptEnabled then
-        autoCollectLoop = task.spawn(function()
-            while autoCollectPromptEnabled do
-                local nearest = GetNearestPrompt()
-                if nearest then
-                    TriggerPrompt(nearest)
-                end
-                task.wait(0.05)
-            end
-        end)
-
-        gui:prompt{
-            Title = "Auto Collect Prompt",
-            Text = "Auto Collect Enabled [Q]",
-            Time = 2
-        }
-    else
-        gui:prompt{
-            Title = "Auto Collect Prompt",
-            Text = "Auto Collect Disabled [Q]",
-            Time = 2
-        }
-    end
-
-    if isKeybindTrigger and autoCollectToggleRef then
-        pcall(function()
-            autoCollectToggleRef:SetState(autoCollectPromptEnabled)
-        end)
-    end
-end
-
-UIS.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    
-    if input.KeyCode == Enum.KeyCode.F then
-        if flying then StopFly() else StartFly() end
-    elseif input.KeyCode == Enum.KeyCode.Q then
-        ToggleAutoCollect(not autoCollectPromptEnabled, true)
     end
 end)
 -- ================================================================= --
@@ -518,33 +461,117 @@ espHeartbeatLoop = RunService.Heartbeat:Connect(function()
     end
 end)
 
+local PresetTab = gui:tab{ Name = "Full Presets", Icon = "rbxassetid://6034996695" }
+for name, data in pairs(ANIMS) do
+    PresetTab:button({
+        Name = name,
+        Callback = function()
+            ApplySingle("idle", {idle1=data.idle1, idle2=data.idle2 or data.idle1})
+            ApplySingle("walk", data.walk)
+            ApplySingle("run", data.run)
+            ApplySingle("jump", data.jump)
+            ApplySingle("climb", data.climb)
+            ApplySingle("fall", data.fall)
+            if data.swim then ApplySingle("swim", {swim=data.swim, swimidle=data.swimidle or data.swim}) end
+        end
+    })
+end
+
+local function CreateOnlyTab(tabName, category)
+    local tab = gui:tab{ Name = tabName, Icon = "rbxassetid://6034996695" }
+    for name, data in pairs(ANIMS) do
+        if data[category] or (category == "idle" and data.idle1) then
+            tab:button({
+                Name = name,
+                Callback = function()
+                    if category == "idle" then
+                        ApplySingle("idle", {idle1=data.idle1, idle2=data.idle2 or data.idle1})
+                    elseif category == "swim" and data.swim then
+                        ApplySingle("swim", {swim=data.swim, swimidle=data.swimidle or data.swim})
+                    else
+                        if data[category] then ApplySingle(category, data[category]) end
+                    end
+                end
+            })
+        end
+    end
+end
+
+CreateOnlyTab("IDLE Only", "idle")
+CreateOnlyTab("WALK Only", "walk")
+CreateOnlyTab("RUN Only", "run")
+CreateOnlyTab("JUMP Only", "jump")
+CreateOnlyTab("CLIMB Only", "climb")
+CreateOnlyTab("FALL Only", "fall")
+CreateOnlyTab("SWIM Only", "swim")
+
+local PoseTab = gui:tab{ Name = "Pose", Icon = "rbxassetid://6034996695" }
+PoseTab:button({ Name = "⛔ STOP ANIMATION", Callback = StopAnim })
+PoseTab:button({ Name = "AMAZON POSE", Callback = function() PlayAnim(norm("133117300343405"), {value=currentPose}) end })
+
+local EmoteTab = gui:tab{ Name = "Emote", Icon = "rbxassetid://6034996695" }
+local function AddEmote(n,id) EmoteTab:button({ Name = n, Callback = function() PlayAnim(norm(id),{value=currentEmote}) end }) end
+AddEmote("Rakai", "71494363833326") 
+AddEmote("Michael", "88285541926517") 
+AddEmote("Hip Sway", "138316142522795") 
+AddEmote("NYC Sturdy", "140333103929828")
+EmoteTab:button({ Name = "STOP EMOTE", Callback = function() if currentEmote then currentEmote:Stop() end StopAnim() end })
+
 --------------------------------------------------------------------------------
--- SISTEM OPTIMASI FPS BOOST (TOTAL LIGHT KILLER)
+-- PENGATURAN ESP & FORCE TRANSPARENCY BOULDERS
+--------------------------------------------------------------------------------
+local function applyBoulderESP(boulder)
+    if not boulder:IsA("Model") then return end
+
+    for _, child in ipairs(boulder:GetDescendants()) do
+        if child:IsA("BasePart") then
+            child.Transparency = 0
+            child:GetPropertyChangedSignal("Transparency"):Connect(function()
+                if child.Transparency > 0 then
+                    child.Transparency = 0
+                end
+            end)
+        end
+    end
+
+    local highlight = voltiteHighlightCache[boulder] or boulder:FindFirstChild("BoulderESP")
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "BoulderESP"
+        highlight.FillColor = Color3.fromRGB(0, 255, 128)
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.4
+        highlight.OutlineTransparency = 0
+        highlight.Adornee = boulder
+        highlight.Parent = boulder
+        voltiteHighlightCache[boulder] = highlight
+    end
+    highlight.Enabled = voltiteHighlightEnabled
+end
+
+local LocalTab = gui:tab{ Name = "Local", Icon = "rbxassetid://6034996695" }
+
+--------------------------------------------------------------------------------
+-- SISTEM OPTIMASI FPS BOOST (FULL LIGHTING & NEON FIX)
 --------------------------------------------------------------------------------
 local function OptimizePart(v)
-    pcall(function()
-        if v:IsA("Light") or v:IsA("PointLight") or v:IsA("SurfaceLight") or v:IsA("SpotLight") then
-            if fpsBoostEnabled then 
-                v.Enabled = false 
-                v.Brightness = 0
-                v.Range = 0
-            end
-        elseif v:IsA("BasePart") or v:IsA("MeshPart") then
-            if v.Material == Enum.Material.Neon or fpsBoostEnabled then
-                v.Material = Enum.Material.SmoothPlastic
-            end
-            v.CastShadow = false
-            if v:IsA("MeshPart") then
-                v.RenderFidelity = Enum.RenderFidelity.Performance
-            end
-        elseif v:IsA("Decal") or v:IsA("Texture") then
-            if fpsBoostEnabled then v.Transparency = 1 end
-        elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then
-            if fpsBoostEnabled then v.Enabled = false end
-        elseif v:IsA("PostEffect") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("DepthOfFieldEffect") or v:IsA("Atmosphere") or v:IsA("Clouds") then
-            if fpsBoostEnabled then v.Enabled = false end
+    if v:IsA("BasePart") or v:IsA("MeshPart") then
+        if v.Material == Enum.Material.Neon or fpsBoostEnabled then
+            v.Material = Enum.Material.SmoothPlastic
         end
-    end)
+        v.CastShadow = false
+        if v:IsA("MeshPart") then
+            v.RenderFidelity = Enum.RenderFidelity.Performance
+        end
+    elseif v:IsA("Light") or v:IsA("PointLight") or v:IsA("SurfaceLight") or v:IsA("SpotLight") then
+        if fpsBoostEnabled then v.Enabled = false end
+    elseif v:IsA("Decal") or v:IsA("Texture") then
+        if fpsBoostEnabled then v:Destroy() end
+    elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Smoke") or v:IsA("Fire") or v:IsA("Sparkles") then
+        if fpsBoostEnabled then v.Enabled = false end
+    elseif v:IsA("PostEffect") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("DepthOfFieldEffect") then
+        if fpsBoostEnabled then v.Enabled = false end
+    end
 end
 
 local function ApplyFPSBoost(state)
@@ -553,38 +580,27 @@ local function ApplyFPSBoost(state)
     if state then
         Lighting.GlobalShadows = false
         Lighting.FogEnd = 9e9
-        Lighting.Brightness = 0
+        Lighting.Brightness = 1
         pcall(function() Lighting.Technology = Enum.Technology.Compatibility end)
 
         for _, effect in ipairs(Lighting:GetChildren()) do
-            pcall(function()
-                if effect:IsA("PostEffect") or effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("SunRaysEffect") or effect:IsA("DepthOfFieldEffect") or effect:IsA("Light") or effect:IsA("Atmosphere") or effect:IsA("Clouds") then
-                    effect.Enabled = false
-                end
-            end)
+            if effect:IsA("PostEffect") or effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("SunRaysEffect") or effect:IsA("DepthOfFieldEffect") or effect:IsA("Light") then
+                effect.Enabled = false
+            end
         end
 
         local camera = workspace.CurrentCamera
         if camera then
             for _, effect in ipairs(camera:GetChildren()) do
-                pcall(function()
-                    if effect:IsA("PostEffect") or effect:IsA("BloomEffect") then
-                        effect.Enabled = false
-                    end
-                end)
+                if effect:IsA("PostEffect") or effect:IsA("BloomEffect") then
+                    effect.Enabled = false
+                end
             end
         end
 
         local childAddedLighting = Lighting.ChildAdded:Connect(function(child)
-            if fpsBoostEnabled then
-                pcall(function()
-                    if child:IsA("Light") or child:IsA("PointLight") or child:IsA("SurfaceLight") or child:IsA("SpotLight") then
-                        child.Enabled = false
-                        child.Brightness = 0
-                    elseif child:IsA("PostEffect") or child:IsA("BloomEffect") then
-                        child.Enabled = false
-                    end
-                end)
+            if fpsBoostEnabled and (child:IsA("PostEffect") or child:IsA("BloomEffect") or child:IsA("Light")) then
+                child.Enabled = false
             end
         end)
         table.insert(fpsConnections, childAddedLighting)
@@ -600,27 +616,11 @@ local function ApplyFPSBoost(state)
         end)
         table.insert(fpsConnections, workspaceAdded)
 
-        lightSweepLoop = task.spawn(function()
-            while fpsBoostEnabled do
-                for _, light in ipairs(workspace:GetDescendants()) do
-                    if light:IsA("Light") or light:IsA("PointLight") or light:IsA("SurfaceLight") or light:IsA("SpotLight") then
-                        if light.Enabled or light.Brightness > 0 then
-                            light.Enabled = false
-                            light.Brightness = 0
-                        end
-                    end
-                end
-                task.wait(1)
-            end
-        end)
-
         if workspace.Terrain then
-            pcall(function()
-                workspace.Terrain.WaterWaveSize = 0
-                workspace.Terrain.WaterWaveSpeed = 0
-                workspace.Terrain.WaterReflectance = 0
-                workspace.Terrain.WaterTransparency = 0
-            end)
+            workspace.Terrain.WaterWaveSize = 0
+            workspace.Terrain.WaterWaveSpeed = 0
+            workspace.Terrain.WaterReflectance = 0
+            workspace.Terrain.WaterTransparency = 0
         end
     else
         for _, conn in ipairs(fpsConnections) do
@@ -628,47 +628,223 @@ local function ApplyFPSBoost(state)
         end
         table.clear(fpsConnections)
 
-        if lightSweepLoop then
-            task.cancel(lightSweepLoop)
-            lightSweepLoop = nil
-        end
-
         Lighting.GlobalShadows = originalLightingSettings.GlobalShadows
         Lighting.FogEnd = originalLightingSettings.FogEnd
         Lighting.Brightness = originalLightingSettings.Brightness
         pcall(function() Lighting.Technology = originalLightingSettings.Technology end)
 
         for _, effect in ipairs(Lighting:GetChildren()) do
-            pcall(function()
-                if effect:IsA("PostEffect") or effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("SunRaysEffect") or effect:IsA("DepthOfFieldEffect") or effect:IsA("Atmosphere") then
-                    effect.Enabled = true
-                end
-            end)
+            if effect:IsA("PostEffect") or effect:IsA("BloomEffect") or effect:IsA("BlurEffect") or effect:IsA("SunRaysEffect") or effect:IsA("DepthOfFieldEffect") then
+                effect.Enabled = true
+            end
         end
     end
 end
 
--- ================================================================= --
--- MERCURY UI INTERFACE IMPLEMENTATION
--- ================================================================= --
-
--- TAB 1: LOCAL PLAYER
-local LocalTab = gui:tab{ Name = "Local Player", Icon = "rbxassetid://6034996695" }
-
 LocalTab:toggle({ 
-    Name = "⚡ Anti-Ragdoll", 
+    Name = "⚡ Ultra FPS Boost & No Bloom", 
     Callback = function(state) 
-        antiRagdollEnabled = state 
+        ApplyFPSBoost(state)
     end 
 })
 
 LocalTab:toggle({ 
-    Name = "🚀 Ultra FPS Booster & Light Killer", 
+    Name = "🔮 Boulders Highlight (Green ESP)", 
     Callback = function(state) 
-        ApplyFPSBoost(state) 
+        voltiteHighlightEnabled = state
+        
+        for obj, hl in pairs(voltiteHighlightCache) do
+            if hl then hl.Enabled = state end
+        end
     end 
 })
 
+task.spawn(function()
+    local targetPath = workspace:WaitForChild("MountainDecorations", 10)
+    targetPath = targetPath and targetPath:WaitForChild("Boulders", 10)
+    
+    if targetPath then
+        for _, child in ipairs(targetPath:GetChildren()) do
+            applyBoulderESP(child)
+        end
+        
+        targetPath.ChildAdded:Connect(function(child)
+            applyBoulderESP(child)
+        end)
+    end
+end)
+
+local function GetNearestBoulderPosition()
+    local targetPath = workspace:FindFirstChild("MountainDecorations")
+    targetPath = targetPath and targetPath:FindFirstChild("Boulders")
+    if not targetPath then return nil end
+
+    local char = plr.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local nearestPos = nil
+    local shortestDist = 50
+
+    for _, obj in ipairs(targetPath:GetChildren()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            local pos = obj:IsA("Model") and (obj.PrimaryPart and obj.PrimaryPart.Position or obj:GetPivot().Position) or obj.Position
+            local dist = (hrp.Position - pos).Magnitude
+            if dist < shortestDist then
+                shortestDist = dist
+                nearestPos = pos
+            end
+        end
+    end
+    return nearestPos
+end
+
+LocalTab:slider({ 
+    Name = "⚡ Dig Speed Multiplier", 
+    Default = 2, 
+    Min = 1, 
+    Max = 10, 
+    Callback = function(v) digMultiplier = v end 
+})
+
+LocalTab:toggle({ 
+    Name = "🧲 Auto-Aim Nearest Boulder", 
+    Callback = function(state) autoAimBoulder = state end 
+})
+
+LocalTab:toggle({ 
+    Name = "🤖 Auto Dig (No Click Required)", 
+    Callback = function(state) autoDigNoClick = state end 
+})
+
+LocalTab:toggle({ 
+    Name = "🔥 Turbo Dig (Master Switch)", 
+    Callback = function(state) 
+        turboDigEnabled = state
+        
+        if turboDigLoop then 
+            turboDigLoop:Disconnect() 
+            turboDigLoop = nil
+        end
+        
+        if turboDigEnabled and DigEvent then
+            local fastEvent = DigEvent
+            local fastMouse = plr:GetMouse()
+            local fastUis = UIS
+            local localPlayer = plr
+            local mouseLeft = Enum.UserInputType.MouseButton1
+            
+            turboDigLoop = RunService.Heartbeat:Connect(function()
+                if autoDigNoClick or fastUis:IsMouseButtonPressed(mouseLeft) then
+                    local character = localPlayer.Character
+                    local currentTool = character and character:FindFirstChildOfClass("Tool")
+                    
+                    if autoDigNoClick and not currentTool then return end
+                    
+                    local dynamicItemName = currentTool and currentTool.Name or "Celestial Apex" 
+                    local targetPos = nil
+                    
+                    if autoAimBoulder then
+                        targetPos = GetNearestBoulderPosition()
+                    end
+                    
+                    if not targetPos and fastMouse.Hit then
+                        targetPos = fastMouse.Hit.Position
+                    end
+
+                    if targetPos then
+                        for i = 1, digMultiplier do
+                            fastEvent:FireServer(dynamicItemName, targetPos)
+                        end
+                    end
+                end
+            end)
+        end
+    end 
+})
+
+LocalTab:toggle({ 
+    Name = "💎 Crystal Mine FX (On Prompt Triggered)", 
+    Callback = function(state) 
+        crystalMineEnabled = state
+        
+        if promptCrystalConnection then 
+            promptCrystalConnection:Disconnect() 
+            promptCrystalConnection = nil 
+        end
+        
+        if crystalMineEnabled and CrystalEvent then
+            local fastEvent = CrystalEvent
+            local localPlayer = plr
+            
+            promptCrystalConnection = ProximityPromptService.PromptTriggered:Connect(function(prompt)
+                local promptParent = prompt.Parent
+                local character = localPlayer.Character
+                local hrp = character and character:FindFirstChild("HumanoidRootPart")
+                
+                if promptParent and promptParent:IsA("BasePart") and hrp then
+                    local distance = (hrp.Position - promptParent.Position).Magnitude
+                    
+                    for i = 1, 25 do
+                        local pseudoRandom = math.random(1000, 9999)
+                        
+                        firesignal(fastEvent.OnClientEvent, 
+                            "hit",
+                            promptParent,        
+                            distance,            
+                            localPlayer.UserId,  
+                            pseudoRandom,        
+                            pseudoRandom + 2800  
+                        )
+                    end
+                end
+            end)
+        end
+    end 
+})
+
+LocalTab:button({ Name = "🌐 Server Hop", Callback = ServerHop })
+LocalTab:slider({ Name = "🚀 Fly Speed (Unlimited)", Default = 50, Min = 10, Max = 5000, Callback = function(v) flySpeed = v end })
+LocalTab:toggle({ Name = "Fly (F) + Noclip", Callback = function(v) if v then StartFly() else StopFly() end end })
+
+LocalTab:button({ 
+    Name = "💥 Load Touch Fling", 
+    Callback = function() 
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/SCRIPTHUB-dev-god/exploit/refs/heads/main/fling/the-touch-fling.luau",true))()
+        end)
+    end 
+})
+
+local infJumpEnabled = false
+local jumpDebounce = false
+UIS.JumpRequest:Connect(function()
+    if infJumpEnabled then
+        local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+        if hum and not jumpDebounce then
+            jumpDebounce = true
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            task.wait(0.1)
+            jumpDebounce = false
+        end
+    end
+end)
+LocalTab:toggle({ Name = "Infinite Jump", Callback = function(s) infJumpEnabled = s end })
+
+LocalTab:toggle({ Name = "🛡️ Anti Ragdoll", Callback = function(state) 
+    antiRagdollEnabled = state 
+    if state and RagdollSystem then
+        pcall(function()
+            local localRagdoll = RagdollSystem:getLocalRagdoll()
+            if localRagdoll and localRagdoll:isRagdolled() then
+                localRagdoll:deactivateRagdollPhysics()
+                RagdollSystem.Remotes.DeactivateRagdoll:FireServer()
+            end
+        end)
+    end
+end })
+
+-- Tombol 1: Instant Fire Prompt (Manual Hit Instant)
 LocalTab:toggle({ 
     Name = "⚡ Instant Fire Prompt", 
     Callback = function(state) 
@@ -676,197 +852,48 @@ LocalTab:toggle({
     end 
 })
 
-autoCollectToggleRef = LocalTab:toggle({ 
-    Name = "🤖 Auto Collect Nearest Prompt [Q]", 
+-- Tombol 2: Auto Collect Nearest Prompt (Otomatis Ambil Terdekat)
+LocalTab:toggle({ 
+    Name = "🤖 Auto Collect Nearest Prompt", 
     Callback = function(state) 
-        if state ~= autoCollectPromptEnabled then
-            ToggleAutoCollect(state, false)
+        autoCollectPromptEnabled = state
+        
+        if autoCollectLoop then
+            autoCollectLoop:Disconnect()
+            autoCollectLoop = nil
         end
-    end 
-})
-
-LocalTab:toggle({ 
-    Name = "👁️ Enable Player ESP (Box)", 
-    Callback = function(state) 
-        espEnabled = state 
-    end 
-})
-
-LocalTab:toggle({ 
-    Name = "📏 Enable ESP Lines (Tracers)", 
-    Callback = function(state) 
-        espLinesEnabled = state 
-    end 
-})
-
-LocalTab:slider({ 
-    Name = "WalkSpeed", 
-    Default = 16, 
-    Min = 1, 
-    Max = 5000, 
-    Callback = function(v) 
-        lastWalkSpeed = v 
-    end 
-})
-
-LocalTab:slider({ 
-    Name = "Fly Speed", 
-    Default = 50, 
-    Min = 10, 
-    Max = 500, 
-    Callback = function(v) 
-        flySpeed = v 
-    end 
-})
-
-LocalTab:toggle({ 
-    Name = "🕊️ Fly Mode [F]", 
-    Callback = function(state) 
-        if state then StartFly() else StopFly() end 
-    end 
-})
-
--- TAB 2: DIGGING & MINING
-local DigTab = gui:tab{ Name = "Dig & Mine", Icon = "rbxassetid://6034996695" }
-
-DigTab:slider({
-    Name = "Dig Multiplier (Power)",
-    Default = 2,
-    Min = 1,
-    Max = 50,
-    Callback = function(val)
-        digMultiplier = val
-    end
-})
-
-DigTab:toggle({
-    Name = "⚡ Turbo Auto Dig",
-    Callback = function(state)
-        turboDigEnabled = state
-        if turboDigLoop then task.cancel(turboDigLoop) turboDigLoop = nil end
-        if state then
-            turboDigLoop = task.spawn(function()
-                while turboDigEnabled do
-                    if DigEvent then
-                        for i = 1, digMultiplier do
-                            DigEvent:FireServer()
-                        end
-                    end
-                    task.wait(0.01)
+        
+        if autoCollectPromptEnabled then
+            autoCollectLoop = RunService.Heartbeat:Connect(function()
+                local nearest = GetNearestPrompt()
+                if nearest then
+                    TriggerPrompt(nearest)
                 end
             end)
         end
-    end
+    end 
 })
 
-DigTab:toggle({
-    Name = "🎯 Auto Aim Boulder",
-    Callback = function(state)
-        autoAimBoulder = state
-    end
-})
+LocalTab:toggle({ Name = "👁️ Enable Player ESP (Box)", Callback = function(state) espEnabled = state end })
+LocalTab:toggle({ Name = "📏 Enable ESP Lines (Tracers)", Callback = function(state) espLinesEnabled = state end })
+LocalTab:slider({ Name = "WalkSpeed", Default = 16, Min = 1, Max = 5000, Callback = function(v) lastWalkSpeed = v end })
 
-DigTab:toggle({
-    Name = "💎 Auto Crystal Mine FX",
-    Callback = function(state)
-        crystalMineEnabled = state
-        if promptCrystalConnection then promptCrystalConnection:Disconnect() promptCrystalConnection = nil end
-        if state then
-            promptCrystalConnection = ProximityPromptService.PromptTriggered:Connect(function(prompt, player)
-                if player == plr and CrystalEvent then
-                    CrystalEvent:FireServer(prompt.Parent)
-                end
-            end)
-        end
-    end
-})
-
--- TAB 3: ANIMATION PACKS
-local AnimTab = gui:tab{ Name = "Animations", Icon = "rbxassetid://6034996695" }
-
-local animNames = {}
-for name, _ in pairs(ANIMS) do
-    table.insert(animNames, name)
-end
-
-AnimTab:dropdown({
-    Name = "Select Animation Pack",
-    Items = animNames,
-    Callback = function(selected)
-        ApplySet(selected)
-    end
-})
-
-AnimTab:button({
-    Name = "🛑 Reset Animations",
-    Callback = function()
-        StopAnim()
-        local char = plr.Character
-        if char and char:FindFirstChild("Animate") then
-            char.Animate.Disabled = true
-            task.wait(0.05)
-            char.Animate.Disabled = false
-        end
-    end
-})
-
--- TAB 4: PLAYERS MANAGEMENT
 local PlayerTab = gui:tab{ Name = "Players", Icon = "rbxassetid://6034996695" }
 local selectedPlayer
-
-local function GetPlayers() 
-    local t = {} 
-    for _,p in ipairs(Players:GetPlayers()) do 
-        if p ~= plr then 
-            table.insert(t, p.Name) 
-        end 
-    end 
-    return t 
-end
-
-local dropdown = PlayerTab:dropdown({ 
-    Name = "Select Player", 
-    Items = GetPlayers(), 
-    Callback = function(v) 
-        selectedPlayer = v 
-    end 
-})
-
-PlayerTab:button({ 
-    Name = "Refresh List", 
-    Callback = function() 
-        dropdown:SetItems(GetPlayers()) 
-    end 
-})
-
-PlayerTab:button({ 
-    Name = "Teleport", 
-    Callback = function() 
-        local t = Players:FindFirstChild(selectedPlayer or "") 
-        if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then 
-            plr.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame 
-        end 
-    end
-})
-
-PlayerTab:button({ 
-    Name = "Spectate", 
-    Callback = function() 
-        local t = Players:FindFirstChild(selectedPlayer or "") 
-        if t and t.Character and t.Character:FindFirstChildOfClass("Humanoid") then 
-            workspace.CurrentCamera.CameraSubject = t.Character:FindFirstChildOfClass("Humanoid") 
-        end 
-    end
-})
-
-PlayerTab:button({ 
-    Name = "Stop Spectate", 
-    Callback = function() 
-        if plr.Character and plr.Character:FindFirstChildOfClass("Humanoid") then 
-            workspace.CurrentCamera.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid") 
-        end 
-    end
-})
+local function GetPlayers() local t = {} for _,p in ipairs(Players:GetPlayers()) do if p ~= plr then table.insert(t,p.Name) end end return t end
+local dropdown = PlayerTab:dropdown({ Name = "Select Player", Items = GetPlayers(), Callback = function(v) selectedPlayer = v end })
+PlayerTab:button({ Name = "Refresh List", Callback = function() dropdown:SetItems(GetPlayers()) end })
+PlayerTab:button({ Name = "Teleport", Callback = function() 
+    local t = Players:FindFirstChild(selectedPlayer or "") 
+    if t and t.Character then plr.Character.HumanoidRootPart.CFrame = t.Character.HumanoidRootPart.CFrame end 
+end})
+PlayerTab:button({ Name = "Spectate", Callback = function() 
+    local t = Players:FindFirstChild(selectedPlayer or "") 
+    if t and t.Character then workspace.CurrentCamera.CameraSubject = t.Character:FindFirstChildOfClass("Humanoid") end 
+end})
+PlayerTab:button({ Name = "Stop Spectate", Callback = function() 
+    if plr.Character then workspace.CurrentCamera.CameraSubject = plr.Character:FindFirstChildOfClass("Humanoid") end 
+end})
 
 PlayerTab:button({
     Name = "📋 Copy Player Appearance",
@@ -874,12 +901,5 @@ PlayerTab:button({
         pcall(function()
             loadstring(game:HttpGet('https://raw.githubusercontent.com/Nearastro/Nearastro/refs/heads/main/00CopyAvaFE.lua'))()
         end)
-    end
-})
-
-PlayerTab:button({
-    Name = "🌐 Server Hop",
-    Callback = function()
-        ServerHop()
     end
 })
